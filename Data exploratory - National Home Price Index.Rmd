@@ -1,0 +1,187 @@
+---
+title: "Date exploratory - Group Project"
+output: html_document
+date: "2025-03-01"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r pressure, echo=FALSE}
+library(zoo)
+library(lubridate)
+library(mgcv)
+library(TSA)
+library(dynlm)
+library(tseries)
+library(car)
+library(MuMIn)
+library(ggplot2)
+library(reshape2)
+library(greybox)
+library(mlr)
+library(dplyr)
+library(data.table)
+library(urca)
+library(devtools)
+library(prophet)
+```
+
+First I load and plot the data, with respective ACF plot.
+```{r}
+price_df <- read.csv("National Home Price Index.csv")
+price <- ts(price_df$CSUSHPINSA, start = c(1987, 1), frequency = 12) 
+ts.plot(price, ylab="National Home Price Index")
+acf(price, lag.max = 12*30)
+```
+I aggregate the data the monthly data into quarterly data.
+
+```{r}
+price_q <- aggregate(price, nfrequency = 4)
+ts.plot(price_q, ylab="National Home Price Index")
+acf(price_q, lag.max = 12*30)
+```
+I calulculate spline trend.
+```{r}
+time.pts = c(1:length(price_q))
+time.pts = c(time.pts - min(time.pts))/max(time.pts)
+
+spl = gam(price_q~s(time.pts)) #Spline
+spl_ts = ts(fitted(spl),start=1987,frequency=4)
+
+ts.plot(price_q,ylab="National Home Price Index",main="National Home Price Index Trend Estimations")
+lines(spl_ts,lwd=2,col="red")
+```
+
+```{r}
+res_spl <- price_q - spl_ts
+
+plot(res_spl, type = "l",main="Residuals Spline detrended")
+acf(res_spl, lag.max = 4*30, main='Spline detrended Residuals')
+```
+There might be some heteroskedasticity...
+
+I clalculate the trend+seasonality.
+```{r}
+time.pts2 = c(1:length(price_q))
+time.pts2 = c(time.pts2 - min(time.pts2))/max(time.pts2)
+
+gam_ses = gam(price_q~s(time.pts2)+season(price_q))
+gam_ses_ts = ts(fitted(gam_ses),start=1987,frequency=4)
+
+plot(price_q, type = "l",ylab="National Home Price Index",main="National Home Price Index trend+seasonality Estimations")
+lines(gam_ses_ts, lwd=2, col="red")
+```
+```{r}
+res_2 <- price_q - gam_ses_ts
+
+plot(res_2, type = "l",main="Residuals Trend+Seasonality")
+acf(res_2, lag.max = 4*50, main='Trend+Seasonality Residuals')
+```
+Still might be some heterosckedasticity.
+
+I differenciate the data.
+```{r}
+diff_ts = diff(ts(price_q,start=1987,frequency=4))
+
+plot(diff_ts, type = "l",main="Residuals Differencing")
+acf(diff_ts, lag.max = 4*30, main='Differencing Residuals')
+```
+I differenciate again.
+
+```{r}
+diff_diff_ts = diff(ts(diff_ts,start=1987,frequency=4))
+
+plot(diff_diff_ts, type = "l",main="Residuals Diff_Diff")
+acf(diff_diff_ts, lag.max = 4*30, main='Diff_Diff Residuals')
+```
+Clear pattern, maybe we could calculate the seasonality of the diff-diff.
+
+Start using ARIMA.
+```{r}
+n <- length(res_2)
+p <- 0:6
+q <- 0:6
+aic <- matrix(0, length(p), length(q)) 
+for (i in 1:length(p)) {
+  for (j in 1:length(q)) {
+    modij = arima(res_2, order = c(p[i], 0, q[j]), method = 'ML')
+    aic[i, j] = modij$aic + 2 * (p[i] + q[j] + 1) * (p[i] + q[i]) / (n - p[i] - q[j] - 1)
+  }
+}
+
+
+norder = 7
+aicv = as.vector(aic)
+plot(aicv, ylab = "AIC values")
+indexp = rep(c(1:norder),norder)
+indexq = rep(c(1:norder),each=norder)
+indexaic = which(aicv == min(aicv))
+porder = indexp[indexaic]-1
+qorder = indexq[indexaic]-1
+cat("The p order is ", porder)
+cat("\nThe q order is ", qorder)
+```
+```{r}
+res_model = arima(res_2, order = c(5, 0, 6), method = 'ML')
+res_model
+```
+```{r}
+ts.plot(residuals(res_model),ylab = "Residual Process")
+acf(residuals(res_model),lag.max = 4*30)
+pacf(residuals(res_model),lag.max = 4*30)
+qqPlot(residuals(res_model), ylab = "Residuals")
+Box.test(res_model$resid, lag = (5 + 6 + 1), type = "Ljung-Box", fitdf = (5+6))
+```
+
+
+
+
+
+The difference parameter will be able to go up to 2.
+```{r}
+
+test_modelA <- function(p,d,q){
+  mod = arima(price_q, order=c(p,d,q), method="ML", include.mean = TRUE)
+  current.aic = AIC(mod)
+  df = data.frame(p,d,q,current.aic)
+  names(df) <- c("p","d","q","AIC")
+  #print(paste(p,d,q,current.aic,sep=" "))
+  return(df)
+}
+
+orders = data.frame(Inf,Inf,Inf,Inf)
+names(orders) <- c("p","d","q","AIC")
+
+
+for (p in 0:8){
+  for (d in 0:2){
+    for (q in 0:8) {
+      possibleError <- tryCatch(
+        orders<-rbind(orders,test_modelA(p,d,q)),
+        error=function(e) e
+      )
+      if(inherits(possibleError, "error")) next
+      
+    }
+  }
+}
+orders <- orders[order(orders$AIC),]
+orders
+
+```
+```{r}
+model <- arima(price_q, order = c(6,2,7), method = "ML", include.mean = TRUE)
+model
+```
+
+```{r}
+ts.plot(residuals(model),ylab = "Residual Process")
+acf(residuals(model),lag.max = 4*30)
+pacf(residuals(model),lag.max = 4*30)
+qqPlot(residuals(model), ylab = "Residuals")
+Box.test(model$resid, lag = (6 + 2 + 7 + 1), type = "Ljung-Box", fitdf = (6 + 2 + 7))
+```
+Not good enough.
