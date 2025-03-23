@@ -27,6 +27,7 @@ library(data.table)
 library(urca)
 library(devtools)
 library(prophet)
+library(rugarch)
 ```
 
 First I load and plot the data, with respective ACF plot.
@@ -181,3 +182,25 @@ qqPlot(residuals(model), ylab = "Residuals")
 Box.test(model$resid, lag = (1 + 1 + 2 + 1), type = "Ljung-Box", fitdf = (1 + 1 + 2))
 ```
 These are much better results.
+
+```{r}
+
+arima_residuals <- residuals(model)
+
+garch_spec <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
+                         mean.model = list(armaOrder = c(1, 2)),
+                         distribution.model = "std")
+garch_model <- ugarchfit(spec = garch_spec, data = arima_residuals)
+garch_model
+garch_forecast <- ugarchforecast(garch_model, n.ahead = 4)
+garch_fitted_values <- fitted(garch_forecast)
+garch_fitted_values
+# Calculate the MAPE (Mean Absolute Percentage Error)
+actual_values <- window(mortage, start = c(2023, 3), end = c(2024, 4))
+length(actual_values)
+length(garch_fitted_values)
+mape <- mean(abs((actual_values - garch_fitted_values) / actual_values)) * 100
+cat("MAPE: ", mape, "%\n")
+
+
+```
