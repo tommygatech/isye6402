@@ -27,6 +27,9 @@ library(data.table)
 library(urca)
 library(devtools)
 library(prophet)
+
+#Tommy Le: 3/23/2025
+library(rugarch)
 ```
 
 First I load and plot the data, with respective ACF plot.
@@ -193,4 +196,30 @@ pacf(residuals(model),lag.max = 4*30)
 qqPlot(residuals(model), ylab = "Residuals")
 Box.test(model$resid, lag = (2 + 1 + 5 + 1), type = "Ljung-Box", fitdf = (2 + 1 + 5))
 ```
+```{r}
+#add garch
+# Fit the ARIMA model
+model <- arima(debt, order = c(2, 1, 5), method = "ML", include.mean = TRUE)
 
+# Check residuals of the ARIMA model
+ts.plot(residuals(model), ylab = "Residual Process")
+acf(residuals(model), lag.max = 4*30)
+pacf(residuals(model), lag.max = 4*30)
+qqPlot(residuals(model), ylab = "Residuals")
+Box.test(model$resid, lag = (2 + 1 + 5 + 1), type = "Ljung-Box", fitdf = (2 + 1 + 5))
+
+# Fit a GARCH model on residuals of the ARIMA model
+garch_model <- ugarchfit(spec = ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1,1)),
+                                           mean.model = list(armaOrder = c(2, 5), include.mean = TRUE)),
+                         data = residuals(model))
+
+# Display the summary of the GARCH model
+summary(garch_model)
+
+# Calculate MAPE for ARIMA model
+predictions <- fitted(model)  # Predictions from the ARIMA model
+actual <- debt  # Actual data
+
+mape <- mean(abs((actual - predictions) / actual)) * 100  # MAPE formula
+cat("The MAPE is:", mape, "%")
+```
