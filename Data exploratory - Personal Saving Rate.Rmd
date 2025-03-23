@@ -27,6 +27,7 @@ library(data.table)
 library(urca)
 library(devtools)
 library(prophet)
+library(rugarch)
 ```
 
 First I load and plot the data, with respective ACF plot.
@@ -177,3 +178,29 @@ qqPlot(residuals(model), ylab = "Residuals")
 Box.test(model$resid, lag = (1 + 1 + 4 + 1), type = "Ljung-Box", fitdf = (1 + 1 + 4))
 ```
 Much better results.
+```{r}
+garch_spec <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)), 
+                         mean.model = list(armaOrder = c(0, 0), include.mean = TRUE),
+                         distribution.model = "norm")
+garch_fit <- ugarchfit(spec = garch_spec, data = residuals(res_model))
+summary(garch_fit)
+plot(sigma(garch_fit), type = "l", main = "Conditional Volatility (GARCH)")
+forecast_horizon <- 4  
+forecast_values <- predict(res_model, n.ahead = forecast_horizon)
+
+forecasted_values <- forecast_values$pred
+
+actual_values <- tail(saving_q, forecast_horizon)
+forecasted_values_ts <- ts(forecasted_values, start = c(2024, 1), frequency = 4)
+
+
+cat("Actual Values:\n")
+print(actual_values)
+cat("\nForecasted Values:\n")
+print(forecasted_values_ts)
+
+# Compute MAPE: Mean Absolute Percentage Error
+mape <- mean(abs((actual_values - forecasted_values_ts) / actual_values)) * 100
+cat("\nMAPE: ", mape, "%\n")
+
+```
