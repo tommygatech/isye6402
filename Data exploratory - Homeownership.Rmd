@@ -4,12 +4,10 @@ output: html_document
 date: "2025-03-01"
 ---
 
-```{r setup, include=FALSE}
+{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-```
 
-
-```{r pressure, echo=FALSE}
+{r pressure, echo=FALSE}
 library(zoo)
 library(lubridate)
 library(mgcv)
@@ -27,17 +25,23 @@ library(data.table)
 library(urca)
 library(devtools)
 library(prophet)
-```
+library(rugarch)
+# install.packages("Metrics")
+library(Metrics)
+#install.packages("forecast")  # Install if not already installed
+library(forecast)
 
 First I load and plot the data, with respective ACF plot.
-```{r}
+
+{r}
 homeownership_df <- read.csv("Homeownership Rate in the United States.csv")
 homeownership <- ts(homeownership_df$RHORUSQ156N, start = c(1987, 1), frequency = 4) 
 ts.plot(homeownership, ylab="homeownership")
 acf(homeownership, lag.max = 4*30)
-```
+
 I calulculate spline trend.
-```{r}
+
+{r}
 time.pts = c(1:length(homeownership))
 time.pts = c(time.pts - min(time.pts))/max(time.pts)
 
@@ -46,34 +50,35 @@ spl_ts = ts(fitted(spl),start=1987,frequency=4)
 
 ts.plot(homeownership,ylab="homeownership",main="homeownershipwith Trend Estimations")
 lines(spl_ts,lwd=2,col="red")
-```
 
 I replace outliers at point 134 and 135 with ist trend value.
-```{r}
+
+{r}
 homeownership[134] <- spl_ts[134]
 homeownership[135] <- spl_ts[135]
 
 ts.plot(homeownership, ylab="homeownership")
-```
+
 I recalculate the spline trend.
-```{r}
+
+{r}
 spl_2 = gam(homeownership~s(time.pts)) #Spline
 spl_2_ts = ts(fitted(spl_2),start=1987,frequency=4)
 
 ts.plot(homeownership,ylab="homeownership",main="homeownershipwith Trend Estimations")
 lines(spl_2_ts,lwd=2,col="red")
-```
 
-```{r}
+{r}
 res <- homeownership - spl_2_ts
 
 plot(res, type = "l",main="Residuals Spline detrended")
 acf(res, lag.max = 4*30, main='Spline detrended Residuals')
-```
+
 There might be some heteroskedasticity.
 
 I clalculate the trend+seasonality.
-```{r}
+
+{r}
 time.pts2 = c(1:length(homeownership))
 time.pts2 = c(time.pts2 - min(time.pts2))/max(time.pts2)
 
@@ -82,33 +87,34 @@ gam_ses_ts = ts(fitted(gam_ses),start=1987,frequency=4)
 
 plot(homeownership, type = "l",ylab="homeownership",main="homeownership Estimations")
 lines(gam_ses_ts, lwd=2, col="red")
-```
-```{r}
+
+{r}
 res_2 <- homeownership - gam_ses_ts
 
 plot(res_2, type = "l",main="Residuals Trend+Seasonality")
 acf(res_2, lag.max = 4*50, main='Trend+Seasonality Residuals')
-```
+
 Still might be some heterosckedasticity.
 
 I differenciate the data.
-```{r}
+
+{r}
 diff_ts = diff(ts(homeownership,start=1987,frequency=4))
 
 plot(diff_ts, type = "l",main="Residuals Differencing")
 acf(diff_ts, lag.max = 4*30, main='Differencing Residuals')
-```
+
 I differenciate again.
 
-```{r}
+{r}
 diff_diff_ts = diff(ts(diff_ts,start=1987,frequency=4))
 
 plot(diff_diff_ts, type = "l",main="Residuals Diff_Diff")
 acf(diff_diff_ts, lag.max = 4*30, main='Diff_Diff Residuals')
-```
 
 Start using ARIMA.
-```{r}
+
+{r}
 n <- length(res_2)
 p <- 0:6
 q <- 0:6
@@ -131,25 +137,19 @@ porder = indexp[indexaic]-1
 qorder = indexq[indexaic]-1
 cat("The p order is ", porder)
 cat("\nThe q order is ", qorder)
-```
-```{r}
+
+{r}
 res_model = arima(res_2, order = c(5, 0, 4), method = 'ML')
 res_model
-```
-```{r}
+
+{r}
 ts.plot(residuals(res_model),ylab = "Residual Process")
 acf(residuals(res_model),lag.max = 4*30)
 pacf(residuals(res_model),lag.max = 4*30)
 qqPlot(residuals(res_model), ylab = "Residuals")
 Box.test(res_model$resid, lag = (5 + 4 + 1), type = "Ljung-Box", fitdf = (5+4))
-```
 
-
-
-
-
-
-```{r}
+{r}
 
 test_modelA <- function(p,d,q){
   mod = arima(homeownership, order=c(p,d,q), method="ML", include.mean = TRUE)
@@ -179,17 +179,50 @@ for (p in 0:8){
 orders <- orders[order(orders$AIC),]
 orders
 
-```
-```{r}
+
+{r}
 model <- arima(homeownership, order = c(6,1,6), method = "ML", include.mean = TRUE)
 model
-```
 
-```{r}
+{r}
 ts.plot(residuals(model),ylab = "Residual Process")
 acf(residuals(model),lag.max = 4*30)
 pacf(residuals(model),lag.max = 4*30)
 qqPlot(residuals(model), ylab = "Residuals")
 Box.test(model$resid, lag = (6 + 1 + 6 + 1), type = "Ljung-Box", fitdf = (6 + 1 + 6))
-```
+
+{r}
+# Fit GARCH model on residuals from the ARIMA model (residuals after spline detrending)
+garch_spec <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
+                         mean.model = list(armaOrder = c(0, 0), include.mean = FALSE),
+                         distribution.model = "std")  # "std" for Student's t-distribution
+
+garch_fit <- ugarchfit(spec = garch_spec, data = residuals(res_model))  
+summary(garch_fit)
+
+# Forecast volatility
+garch_forecast <- ugarchforecast(garch_fit, n.ahead = 10)
+#plot(garch_forecast)
+homeownership <- na.approx(homeownership)
+homeownership <- na.locf(homeownership)
+class(homeownership)
+str(homeownership)
+head(homeownership)
+summary(homeownership)
+model <- arima(homeownership, order = c(6, 1, 6), method = "ML", include.mean = TRUE)
+forecast_horizon <- 10
+forecast_vals <- predict(model, n.ahead = forecast_horizon)$pred
+
+actual_vals <- homeownership[(length(homeownership) - forecast_horizon + 1):length(homeownership)]
+
+# Calculate MAPE
+mape_value <- mape(actual_vals, forecast_vals)
+cat("MAPE: ", mape_value)
+
+ts.plot(residuals(model), ylab = "Residual Process")
+acf(residuals(model), lag.max = 4*30)
+pacf(residuals(model), lag.max = 4*30)
+qqPlot(residuals(model), ylab = "Residuals")
+Box.test(model$resid, lag = (6 + 1 + 6 + 1), type = "Ljung-Box", fitdf = (6 + 1 + 6))
+
 
