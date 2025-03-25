@@ -31,78 +31,77 @@ library(prophet)
 
 First I load and plot the data, with respective ACF plot.
 ```{r}
-mortage_df <- read.csv("Mortgage Debt Service Payments as a Percent of Disposable Personal Income.csv")
-mortage <- ts(mortage_df$MDSP, start = c(1987, 1), frequency = 4) 
-ts.plot(mortage, ylab="Consumer debt payment")
-acf(mortage, lag.max = 4*30)
+household_df <- read.csv("Household Debt Service Payments as a Percent of Disposable Personal Income.csv")
+household <- ts(household_df$TDSP, start = c(1987, 1), frequency = 4) 
+ts.plot(household, ylab="Household Debt Service Payments")
+acf(household, lag.max = 4*30)
 ```
-Very similar plot and ACF plot to consumer debt payment...
-
-
 I calulculate spline trend.
 ```{r}
-time.pts = c(1:length(mortage))
+time.pts = c(1:length(household))
 time.pts = c(time.pts - min(time.pts))/max(time.pts)
 
-spl = gam(mortage~s(time.pts)) #Spline
+spl = gam(household~s(time.pts)) #Spline
 spl_ts = ts(fitted(spl),start=1987,frequency=4)
 
-ts.plot(mortage,ylab="Mortage Debt Payment",main="Mortage Debt Payment Trend Estimations")
+ts.plot(household,ylab="Household Debt Service Payments",main="Household Debt Service Payments Trend Estimations")
 lines(spl_ts,lwd=2,col="red")
 ```
 
-
 ```{r}
-res <- mortage - spl_ts
+res_spl <- household - spl_ts
 
-plot(res, type = "l",main="Residuals Spline detrended")
-acf(res, lag.max = 4*30, main='Spline detrended Residuals')
+plot(res_spl, type = "l",main="Residuals Spline detrended")
+acf(res_spl, lag.max = 4*30, main='Spline detrended Residuals')
 ```
 
 I clalculate the trend+seasonality.
 ```{r}
-time.pts2 = c(1:length(mortage))
+time.pts2 = c(1:length(household))
 time.pts2 = c(time.pts2 - min(time.pts2))/max(time.pts2)
 
-gam_ses = gam(mortage~s(time.pts2)+season(mortage))
+gam_ses = gam(household~s(time.pts2)+season(household))
 gam_ses_ts = ts(fitted(gam_ses),start=1987,frequency=4)
 
-plot(mortage, type = "l",ylab="Mortage Debt Payment",main="Mortage Debt Payment Estimations")
+plot(household, type = "l",ylab="Household Debt Service Payments",main="Household Debt Service Payments trend+seasonality Estimations")
 lines(gam_ses_ts, lwd=2, col="red")
 ```
 ```{r}
-res_2 <- mortage - gam_ses_ts
+res_2 <- household - gam_ses_ts
 
 plot(res_2, type = "l",main="Residuals Trend+Seasonality")
 acf(res_2, lag.max = 4*50, main='Trend+Seasonality Residuals')
 ```
-No improvement.
+No benefit.
 
 I differenciate the data.
 ```{r}
-diff_ts = diff(ts(mortage,start=1987,frequency=4))
+diff_ts = diff(ts(household,start=1987,frequency=4))
 
 plot(diff_ts, type = "l",main="Residuals Differencing")
 acf(diff_ts, lag.max = 4*30, main='Differencing Residuals')
+pacf(diff_ts, lag.max = 4*30, main='Differencing Residuals')
 ```
-I differenciate again.
+Much better results.
 
+I differenciate again.
 ```{r}
 diff_diff_ts = diff(ts(diff_ts,start=1987,frequency=4))
 
 plot(diff_diff_ts, type = "l",main="Residuals Diff_Diff")
 acf(diff_diff_ts, lag.max = 4*30, main='Diff_Diff Residuals')
+pacf(diff_diff_ts, lag.max = 4*30, main='Diff_Diff Residuals')
 ```
 
-Start using ARIMA on just the detrended data as it is simpler.
+Start using ARIMA on the residuals of just detrended data.
 ```{r}
-n <- length(res)
+n <- length(res_spl)
 p <- 0:6
 q <- 0:6
 aic <- matrix(0, length(p), length(q)) 
 for (i in 1:length(p)) {
   for (j in 1:length(q)) {
-    modij = arima(res, order = c(p[i], 0, q[j]), method = 'ML')
+    modij = arima(res_spl, order = c(p[i], 0, q[j]), method = 'ML')
     aic[i, j] = modij$aic + 2 * (p[i] + q[j] + 1) * (p[i] + q[i]) / (n - p[i] - q[j] - 1)
   }
 }
@@ -119,9 +118,8 @@ qorder = indexq[indexaic]-1
 cat("The p order is ", porder)
 cat("\nThe q order is ", qorder)
 ```
-p equal to 3 and q to 6 are the same values of costumer debt payment.
 ```{r}
-res_model = arima(res, order = c(3, 0, 6), method = 'ML')
+res_model = arima(res_2, order = c(6, 0, 2), method = 'ML')
 res_model
 ```
 ```{r}
@@ -129,18 +127,18 @@ ts.plot(residuals(res_model),ylab = "Residual Process")
 acf(residuals(res_model),lag.max = 4*30)
 pacf(residuals(res_model),lag.max = 4*30)
 qqPlot(residuals(res_model), ylab = "Residuals")
-Box.test(res_model$resid, lag = (3 + 6 + 1), type = "Ljung-Box", fitdf = (3+6))
+Box.test(res_model$resid, lag = (6 + 2 + 1), type = "Ljung-Box", fitdf = (6 + 2))
 ```
 
+Very nice results.
 
 
 
-
-
+I will try ARIMA. The difference parameter will be able to go up to 1.
 ```{r}
 
 test_modelA <- function(p,d,q){
-  mod = arima(mortage, order=c(p,d,q), method="ML", include.mean = TRUE)
+  mod = arima(household, order=c(p,d,q), method="ML", include.mean = TRUE)
   current.aic = AIC(mod)
   df = data.frame(p,d,q,current.aic)
   names(df) <- c("p","d","q","AIC")
@@ -152,9 +150,9 @@ orders = data.frame(Inf,Inf,Inf,Inf)
 names(orders) <- c("p","d","q","AIC")
 
 
-for (p in 0:8){
+for (p in 0:6){
   for (d in 0:1){
-    for (q in 0:8) {
+    for (q in 0:6) {
       possibleError <- tryCatch(
         orders<-rbind(orders,test_modelA(p,d,q)),
         error=function(e) e
@@ -168,8 +166,10 @@ orders <- orders[order(orders$AIC),]
 orders
 
 ```
+Pure AR on differenciated data!
+
 ```{r}
-model <- arima(mortage, order = c(1,1,2), method = "ML", include.mean = TRUE)
+model <- arima(household, order = c(3,1,0), method = "ML", include.mean = TRUE)
 model
 ```
 
@@ -178,6 +178,5 @@ ts.plot(residuals(model),ylab = "Residual Process")
 acf(residuals(model),lag.max = 4*30)
 pacf(residuals(model),lag.max = 4*30)
 qqPlot(residuals(model), ylab = "Residuals")
-Box.test(model$resid, lag = (1 + 1 + 2 + 1), type = "Ljung-Box", fitdf = (1 + 1 + 2))
+Box.test(model$resid, lag = (3 + 1 + 1), type = "Ljung-Box", fitdf = (3+1))
 ```
-These are much better results.
