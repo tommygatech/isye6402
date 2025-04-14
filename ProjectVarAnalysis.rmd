@@ -4,12 +4,6 @@ author: "Tommy Le"
 date: "2025-04-05"
 output: html_document
 ---
----
-title: "ProjectVARAnalysis"
-author: "Tommy Le"
-date: "2025-04-05"
-output: html_document
----
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -44,6 +38,15 @@ library(urca)
 # library(mlr)       # If needed, add it back
 # library(devtools)  # Not needed unless installing from source
 
+start_exclude <- c(2019, 1)
+end_exclude <- c(2021, 4)
+exclude_window <- function(ts_data) {
+    time_idx <- time(ts_data)
+    year_quarter <- as.yearqtr(time_idx)
+    mask <- !(year_quarter >= as.yearqtr(start_exclude[1] + (start_exclude[2] - 1) / 4) &
+              year_quarter <= as.yearqtr(end_exclude[1] + (end_exclude[2] - 1) / 4))
+    return(ts_data[mask])
+  }
 # Function to load and prepare data
 load_and_prepare_data <- function() {
   # Load the rental vacancy data
@@ -88,6 +91,11 @@ load_and_prepare_data <- function() {
   housing_prices <- window(housing_prices, end = c(1987, min_length))
   mortgage_rates <- window(mortgage_rates, end = c(1987, min_length))
   disposable_income<-window(disposable_income, end = c(1987, min_length))
+  
+  vacancy <- exclude_window(vacancy)
+  housing_prices <- exclude_window(housing_prices)
+  mortgage_rates <- exclude_window(mortgage_rates)
+  disposable_income <- exclude_window(disposable_income)
   # Combine data into a multivariate time series object
   combined_data <- cbind(Vacancy = vacancy, 
                          Housing_Price = housing_prices, 
@@ -209,192 +217,16 @@ if (!is.null(data_list)) {
 
 
 ```
+Summary Interpretation
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+    All variables are I(1) and became stationary after differencing.
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
+    The VAR(1) model is stable and appropriately specified.
 
-## R Markdown
+    Own lags (Vacancy.l1, Housing_Price.l1, Mortgage_Rate.l1) are significant for some variables, suggesting persistence.
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+    There is no Granger causality, but instantaneous causality exists, especially for housing prices and disposable income.
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-
-```{r pressure, echo=FALSE}
-# Load all required packages for VAR analysis
-library(zoo)
-library(lubridate)
-library(mgcv)
-library(TSA)
-library(dynlm)
-library(tseries)  # This contains the adf.test function
-library(car)
-library(MuMIn)
-library(ggplot2)
-library(reshape2)
-library(vars)
-library(tsDyn)
-library(forecast)
-library(urca)
-
-# Additional packages specifically for VAR analysis (removed unused ones)
-# library(greybox)   # If needed, add it back
-# library(mlr)       # If needed, add it back
-# library(devtools)  # Not needed unless installing from source
-
-# Function to load and prepare data
-load_and_prepare_data <- function() {
-  # Load the rental vacancy data
-  vacancy_df <- read.csv("Rental Vacancy Rate.csv")
-  vacancy <- ts(vacancy_df$RRVRUSQ156N, start = c(1987, 1), frequency = 4)
-  
-  # Check if the additional data files exist, and if not, create placeholder data
-  if(file.exists("National Home Price Index.csv")) {
-    housing_prices_df <- read.csv("National Home Price Index.csv", header = TRUE)
-    housing_prices <- ts(housing_prices_df$CSUSHPINSA, start = c(1987, 1), frequency = 4)
-  } else {
-    set.seed(123)
-    housing_prices <- ts(100 + cumsum(rnorm(length(vacancy), 0.5, 1)), 
-                         start = c(1987, 1), frequency = 4)
-    cat("Note: Using synthetic housing price data\n")
-  }
-  
-  if(file.exists("Consumer debt payment.csv")) {
-    mortgage_rates_df <- read.csv("Consumer debt payment.csv", header = TRUE)
-    mortgage_rates <- ts(mortgage_rates_df$CDSP, start = c(1987, 1), frequency = 4)
-  } else {
-    set.seed(456)
-    mortgage_rates <- ts(6 + cumsum(rnorm(length(vacancy), -0.02, 0.2)), 
-                         start = c(1987, 1), frequency = 4)
-    cat("Note: Using synthetic mortgage rate data\n")
-  }
-  
-  # Ensure all series have the same length by truncating to the shortest series
-  min_length <- min(length(vacancy), length(housing_prices), length(mortgage_rates))
-  vacancy <- window(vacancy, end = c(1987, min_length))
-  housing_prices <- window(housing_prices, end = c(1987, min_length))
-  mortgage_rates <- window(mortgage_rates, end = c(1987, min_length))
-  
-  # Combine data into a multivariate time series object
-  combined_data <- cbind(Vacancy = vacancy, 
-                         Housing_Price = housing_prices, 
-                         Mortgage_Rate = mortgage_rates)
-  
-  return(list(vacancy = vacancy, 
-              combined_data = combined_data))
-}
-
-var_analysis <- function(data_list) {
-  # Retrieve the multivariate time series data
-  combined_data <- data_list$combined_data
-  
-  # Test for stationarity in each series
-  cat("\nStationarity Tests for Each Variable:\n")
-  for (i in 1:ncol(combined_data)) {
-    cat("\nADF Test for", colnames(combined_data)[i], ":\n")
-    tryCatch({
-      print(tseries::adf.test(combined_data[, i]))
-    }, error = function(e) {
-      cat("Error in ADF test:", e$message, "\n")
-      cat("Proceeding with assumption that series is non-stationary\n")
-    })
-  }
-  
-  # First difference to achieve stationarity
-  d_combined_data <- diff(combined_data)
-  
-  # Check stationarity after differencing
-  cat("\nStationarity Tests After Differencing:\n")
-  for (i in 1:ncol(d_combined_data)) {
-    cat("\nADF Test for differenced", colnames(d_combined_data)[i], ":\n")
-    tryCatch({
-      print(tseries::adf.test(d_combined_data[, i]))
-    }, error = function(e) {
-      cat("Error in ADF test:", e$message, "\n")
-      cat("Proceeding with assumption that differenced series is stationary\n")
-    })
-  }
-  
-  # Determine optimal lag order for VAR model
-  lag_selection <- VARselect(d_combined_data, lag.max = 8)
-  optimal_lag <- lag_selection$selection["AIC(n)"]
-  cat("\nOptimal lag according to AIC:", optimal_lag, "\n")
-  
-  # Fit the VAR model
-  var_model <- VAR(d_combined_data, p = optimal_lag)
-  print(summary(var_model))
-  
-  # Granger causality tests
-  cat("\nGranger Causality Tests:\n")
-  for (i in 1:ncol(d_combined_data)) {
-    cat("\nGranger causality for", colnames(d_combined_data)[i], ":\n")
-    print(causality(var_model, cause = colnames(d_combined_data)[i]))
-  }
-  
-  return(var_model)
-}
-
-# Execute the VAR analysis
-data_list <- tryCatch({
-  load_and_prepare_data()
-}, error = function(e) {
-  cat("Error loading data:", e$message, "\n")
-  return(NULL)
-})
-
-if (!is.null(data_list)) {
-  var_model <- var_analysis(data_list)
-  
-  # Only proceed with SVAR if VAR model was successfully created
-  if (!is.null(var_model)) {
-    # Structural VAR (SVAR) Analysis
-    svar_analysis <- function(var_model, combined_data) {
-      # Define Amat (contemporaneous relationships) and Bmat (structural shocks)
-      A_mat <- matrix(0, 3, 3)
-      A_mat[2, 1] <- NA  # Housing_Price can be affected by Vacancy
-      A_mat[3, 1] <- NA  # Mortgage_Rate can be affected by Vacancy
-      A_mat[3, 2] <- NA  # Mortgage_Rate can be affected by Housing_Price
-      
-      # Define Bmat (diagonal with free parameters)
-      B_mat <- diag(3)
-      diag(B_mat) <- NA  # Keep diagonal elements free for identification
-      # Ensure both A_mat and B_mat are defined properly
-      if (all(is.na(A_mat)) || all(is.na(B_mat))) {
-        stop("A_mat or B_mat is improperly defined.")
-      }
-      # Estimate the SVAR model
-      tryCatch({
-        cat("\nEstimating SVAR model...\n")
-        svar_model <- SVAR(var_model, Amat = A_mat, Bmat = B_mat)
-        if (is.null(svar_model)) {
-          stop("svar_model is not fitted correctly.")
-        }
-        summary(svar_model)
-
-        
-        # Forecast Error Variance Decomposition
-        svar_fevd <- fevd(svar_model, n.ahead = 8)
-        if (is.null(svar_fevd)) {
-          stop("svar_fevd is not fitted correctly.")
-        }
-        plot(svar_fevd)
-        
-        return(svar_model)
-      }, error = function(e) {
-        cat("Error in SVAR analysis:", e$message, "\n")
-        return(NULL)
-      })
-    }
-    
-    # Execute SVAR analysis
-    svar_model <- svar_analysis(var_model, data_list$combined_data)
-  }
-}
-
-
-```
+    Covariance and correlation matrices show modest linear relationships among residuals, but nothing too strong.
 
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
