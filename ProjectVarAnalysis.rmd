@@ -91,10 +91,10 @@ load_and_prepare_data <- function() {
   disposable_income <- window(disposable_income, end = c(1987 + (min_length - 1) %/% 4, (min_length - 1) %% 4 + 1))
 
   # Exclude the specified time window
-  vacancy <- exclude_window(vacancy)
-  housing_prices <- exclude_window(housing_prices)
-  mortgage_rates <- exclude_window(mortgage_rates)
-  disposable_income <- exclude_window(disposable_income)
+  #vacancy <- exclude_window(vacancy)
+  #housing_prices <- exclude_window(housing_prices)
+  #mortgage_rates <- exclude_window(mortgage_rates)
+  #disposable_income <- exclude_window(disposable_income)
 
   # Combine data into a multivariate time series object
   combined_data <- cbind(Vacancy = vacancy,
@@ -111,17 +111,19 @@ vecm_analysis <- function(data_list) {
   combined_data <- data_list$combined_data
 
   # Johansen cointegration test
-  johansen_test <- ca.jo(combined_data, type = "trace", K = 2, ecdet = "const") # Adjust K and ecdet as needed
+  johansen_test <- ca.jo(combined_data, type = "trace", K = 5, ecdet = "const") 
   summary_test=summary(johansen_test)
   print(summary_test)
   test_stat <- summary_test@teststat
   critical_values <- summary_test@cval
-  rank <- sum(test_stat > critical_values[, "5pct"])
+  rank <- sum(test_stat > critical_values[, "1pct"])
+  print (rank)
+  
 
   if (rank > 0) {
     cat("\nCointegration detected. Proceeding with VECM.\n")
     # Estimate the VECM model
-    vecm_model <- VECM(combined_data, lag = 2, r = rank, include = "const") # Adjust lag as needed
+    vecm_model <- VECM(combined_data, lag = 2, r = rank, include = "const") 
     summary(vecm_model)
     return(vecm_model)
   } else {
@@ -191,6 +193,8 @@ if (!is.null(data_list)) {
   var_model <- var_analysis(data_list)
    # Perform VECM analysis
   vecm_model <- vecm_analysis(data_list)
+  print(vecm_model)
+  
   # Only proceed with SVAR if VAR model was successfully created
   if (!is.null(var_model)) {
     # Structural VAR (SVAR) Analysis
@@ -238,6 +242,7 @@ if (!is.null(data_list)) {
 
     # Execute SVAR analysis
     svar_model <- svar_analysis(var_model, data_list$combined_data)
+    print(svar_model)
   }
   
 }
