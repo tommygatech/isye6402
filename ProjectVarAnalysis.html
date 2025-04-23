@@ -366,19 +366,24 @@ on using R Markdown see <a href="http://rmarkdown.rstudio.com" class="uri">http:
 generated that includes both content as well as the output of any
 embedded R code chunks within the document. You can embed an R code
 chunk like this:</p>
+<pre class="r"><code># Load all required packages for VAR analysis
+library(zoo)</code></pre>
 <pre><code>## 
 ## Attaching package: &#39;zoo&#39;</code></pre>
 <pre><code>## The following objects are masked from &#39;package:base&#39;:
 ## 
 ##     as.Date, as.Date.numeric</code></pre>
+<pre class="r"><code>library(lubridate)</code></pre>
 <pre><code>## Warning: package &#39;lubridate&#39; was built under R version 4.3.3</code></pre>
 <pre><code>## 
 ## Attaching package: &#39;lubridate&#39;</code></pre>
 <pre><code>## The following objects are masked from &#39;package:base&#39;:
 ## 
 ##     date, intersect, setdiff, union</code></pre>
+<pre class="r"><code>library(mgcv)</code></pre>
 <pre><code>## Loading required package: nlme</code></pre>
 <pre><code>## This is mgcv 1.8-42. For overview type &#39;help(&quot;mgcv-package&quot;)&#39;.</code></pre>
+<pre class="r"><code>library(TSA)</code></pre>
 <pre><code>## Warning: package &#39;TSA&#39; was built under R version 4.3.3</code></pre>
 <pre><code>## 
 ## Attaching package: &#39;TSA&#39;</code></pre>
@@ -388,13 +393,20 @@ chunk like this:</p>
 <pre><code>## The following object is masked from &#39;package:utils&#39;:
 ## 
 ##     tar</code></pre>
+<pre class="r"><code>library(dynlm)</code></pre>
 <pre><code>## Warning: package &#39;dynlm&#39; was built under R version 4.3.3</code></pre>
+<pre class="r"><code>library(tseries)  # This contains the adf.test function</code></pre>
 <pre><code>## Registered S3 method overwritten by &#39;quantmod&#39;:
 ##   method            from
 ##   as.zoo.data.frame zoo</code></pre>
+<pre class="r"><code>library(car)</code></pre>
 <pre><code>## Warning: package &#39;car&#39; was built under R version 4.3.3</code></pre>
 <pre><code>## Loading required package: carData</code></pre>
+<pre class="r"><code>library(MuMIn)</code></pre>
 <pre><code>## Warning: package &#39;MuMIn&#39; was built under R version 4.3.3</code></pre>
+<pre class="r"><code>library(ggplot2)
+library(reshape2)
+library(vars)</code></pre>
 <pre><code>## Warning: package &#39;vars&#39; was built under R version 4.3.3</code></pre>
 <pre><code>## Loading required package: MASS</code></pre>
 <pre><code>## Loading required package: strucchange</code></pre>
@@ -403,17 +415,304 @@ chunk like this:</p>
 <pre><code>## Warning: package &#39;sandwich&#39; was built under R version 4.3.3</code></pre>
 <pre><code>## Loading required package: urca</code></pre>
 <pre><code>## Loading required package: lmtest</code></pre>
+<pre class="r"><code>library(tsDyn)</code></pre>
 <pre><code>## Warning: package &#39;tsDyn&#39; was built under R version 4.3.3</code></pre>
 <pre><code>## Registered S3 methods overwritten by &#39;forecast&#39;:
 ##   method       from
 ##   fitted.Arima TSA 
 ##   plot.Arima   TSA</code></pre>
+<pre class="r"><code>library(forecast)</code></pre>
 <pre><code>## Warning: package &#39;forecast&#39; was built under R version 4.3.3</code></pre>
 <pre><code>## 
 ## Attaching package: &#39;forecast&#39;</code></pre>
 <pre><code>## The following object is masked from &#39;package:nlme&#39;:
 ## 
 ##     getResponse</code></pre>
+<pre class="r"><code>library(urca)
+
+# Function to exclude a specific time window from a time series
+exclude_window &lt;- function(ts_data, start_exclude = c(2019, 1), end_exclude = c(2021, 4)) {
+  time_idx &lt;- time(ts_data)
+  year_quarter &lt;- as.yearqtr(time_idx)
+  mask &lt;- !(year_quarter &gt;= as.yearqtr(start_exclude[1] + (start_exclude[2] - 1) / 4) &amp;
+              year_quarter &lt;= as.yearqtr(end_exclude[1] + (end_exclude[2] - 1) / 4))
+  return(ts_data[mask])
+}
+
+# Function to load and prepare data
+load_and_prepare_data &lt;- function() {
+  # Load the rental vacancy data
+  vacancy_df &lt;- read.csv(&quot;Rental Vacancy Rate.csv&quot;)
+  vacancy &lt;- ts(vacancy_df$RRVRUSQ156N, start = c(1987, 1), frequency = 4)
+
+  # Load or create housing price data
+  if(file.exists(&quot;National Home Price Index.csv&quot;)) {
+    housing_prices_df &lt;- read.csv(&quot;National Home Price Index.csv&quot;, header = TRUE)
+    housing_prices &lt;- ts(housing_prices_df$CSUSHPINSA, start = c(1987, 1), frequency = 4)
+  } else {
+    set.seed(123)
+    housing_prices &lt;- ts(100 + cumsum(rnorm(length(vacancy), 0.5, 1)),
+                           start = c(1987, 1), frequency = 4)
+    cat(&quot;Note: Using synthetic housing price data\n&quot;)
+  }
+
+  # Load or create mortgage rate data
+  if(file.exists(&quot;Fixed Rate Mortgage Average.csv&quot;)) {
+    mortgage_rates_df &lt;- read.csv(&quot;Fixed Rate Mortgage Average.csv&quot;, header = TRUE)
+    mortgage_rates &lt;- ts(mortgage_rates_df$MORTGAGE30US, start = c(1987, 1), frequency = 4)
+  } else {
+    set.seed(456)
+    mortgage_rates &lt;- ts(6 + cumsum(rnorm(length(vacancy), -0.02, 0.2)),
+                           start = c(1987, 1), frequency = 4)
+    cat(&quot;Note: Using synthetic mortgage rate data\n&quot;)
+  }
+
+  # Load or create disposable income data
+  if(file.exists(&quot;Household Debt Service Payments as a Percent of Disposable Personal Income.csv&quot;)) {
+    disposable_income_df &lt;- read.csv(&quot;Household Debt Service Payments as a Percent of Disposable Personal Income.csv&quot;, header = TRUE)
+    disposable_income &lt;- ts(disposable_income_df$TDSP, start = c(1987, 1), frequency = 4)
+  } else {
+    set.seed(678)
+    disposable_income &lt;- ts(6 + cumsum(rnorm(length(vacancy), -0.02, 0.2)),
+                           start = c(1987, 1), frequency = 4)
+    cat(&quot;Note: Using synthetic disposable income data\n&quot;)
+  }
+
+  # Ensure all series have the same length by truncating to the shortest series
+  min_length &lt;- min(length(vacancy), length(housing_prices), length(mortgage_rates), length(disposable_income))
+  vacancy &lt;- window(vacancy, end = c(1987 + (min_length - 1) %/% 4, (min_length - 1) %% 4 + 1))
+  housing_prices &lt;- window(housing_prices, end = c(1987 + (min_length - 1) %/% 4, (min_length - 1) %% 4 + 1))
+  mortgage_rates &lt;- window(mortgage_rates, end = c(1987 + (min_length - 1) %/% 4, (min_length - 1) %% 4 + 1))
+  disposable_income &lt;- window(disposable_income, end = c(1987 + (min_length - 1) %/% 4, (min_length - 1) %% 4 + 1))
+
+  # Exclude the specified time window
+  #vacancy &lt;- exclude_window(vacancy)
+  #housing_prices &lt;- exclude_window(housing_prices)
+  #mortgage_rates &lt;- exclude_window(mortgage_rates)
+  #disposable_income &lt;- exclude_window(disposable_income)
+
+  # Combine data into a multivariate time series object
+  combined_data &lt;- cbind(Vacancy = vacancy,
+                         Housing_Price = housing_prices,
+                         Mortgage_Rate = mortgage_rates,
+                         Disposable_Income = disposable_income)
+
+  return(list(vacancy = vacancy,
+              combined_data = combined_data))
+}
+# Function for VECM analysis
+vecm_analysis &lt;- function(data_list) {
+  # Retrieve the multivariate time series data
+  combined_data &lt;- data_list$combined_data
+
+  # Johansen cointegration test
+  johansen_test &lt;- ca.jo(combined_data, type = &quot;trace&quot;, K = 5, ecdet = &quot;const&quot;) 
+  summary_test=summary(johansen_test)
+  print(summary_test)
+  test_stat &lt;- summary_test@teststat
+  critical_values &lt;- summary_test@cval
+  rank &lt;- sum(test_stat &gt; critical_values[, &quot;1pct&quot;])
+  print (rank)
+  
+
+  if (rank &gt; 0) {
+    cat(&quot;\nCointegration detected. Proceeding with VECM.\n&quot;)
+    # Estimate the VECM model
+    vecm_model &lt;- VECM(combined_data, lag = 2, r = rank, include = &quot;const&quot;) 
+    summary(vecm_model)
+    return(vecm_model)
+  } else {
+    cat(&quot;\nNo cointegration detected. VECM is not appropriate.\n&quot;)
+    return(NULL)
+  }
+}
+var_analysis &lt;- function(data_list) {
+  # Retrieve the multivariate time series data
+  combined_data &lt;- data_list$combined_data
+
+  # Test for stationarity in each series
+  cat(&quot;\nStationarity Tests for Each Variable:\n&quot;)
+  for (i in 1:ncol(combined_data)) {
+    cat(&quot;\nADF Test for&quot;, colnames(combined_data)[i], &quot;:\n&quot;)
+    tryCatch({
+      print(tseries::adf.test(combined_data[, i]))
+    }, error = function(e) {
+      cat(&quot;Error in ADF test:&quot;, e$message, &quot;\n&quot;)
+      cat(&quot;Proceeding with assumption that series is non-stationary\n&quot;)
+    })
+  }
+
+  # First difference to achieve stationarity
+  d_combined_data &lt;- diff(combined_data)
+
+  # Check stationarity after differencing
+  cat(&quot;\nStationarity Tests After Differencing:\n&quot;)
+  for (i in 1:ncol(d_combined_data)) {
+    cat(&quot;\nADF Test for differenced&quot;, colnames(d_combined_data)[i], &quot;:\n&quot;)
+    tryCatch({
+      print(tseries::adf.test(d_combined_data[, i]))
+    }, error = function(e) {
+      cat(&quot;Error in ADF test:&quot;, e$message, &quot;\n&quot;)
+      cat(&quot;Proceeding with assumption that differenced series is stationary\n&quot;)
+    })
+  }
+
+  # Determine optimal lag order for VAR model
+  lag_selection &lt;- VARselect(d_combined_data, lag.max = 20)
+  optimal_lag &lt;- lag_selection$selection[&quot;AIC(n)&quot;]
+  cat(&quot;\nOptimal lag according to AIC:&quot;, optimal_lag, &quot;\n&quot;)
+
+  # Fit the VAR model
+  var_model &lt;- VAR(d_combined_data, p = optimal_lag)
+  print(summary(var_model))
+
+  # Granger causality tests
+  cat(&quot;\nGranger Causality Tests:\n&quot;)
+  for (i in 1:ncol(d_combined_data)) {
+    cat(&quot;\nGranger causality for&quot;, colnames(d_combined_data)[i], &quot;:\n&quot;)
+    print(causality(var_model, cause = colnames(d_combined_data)[i]))
+  }
+
+  return(var_model)
+}
+
+create_interaction_terms &lt;- function(disposable_income) {
+  # Create income quintile based on disposable_income
+  income_quintile &lt;- cut(disposable_income, breaks = quantile(disposable_income, probs = 0:5/5), 
+                         labels = FALSE, include.lowest = TRUE)
+  
+  # Create interaction term (disposable_income * income_quintile)
+  interaction_term &lt;- disposable_income * income_quintile
+  
+  return(data.frame(income_quintile = income_quintile, interaction_term = interaction_term))
+}
+load_and_prepare_data_with_interactions &lt;- function() {
+  data_list &lt;- load_and_prepare_data()
+ 
+  # Add interaction terms to the combined data
+  interaction_terms &lt;- create_interaction_terms(data_list$combined_data[, &quot;Disposable_Income&quot;])
+ 
+  # Combine the interaction terms with the original data
+  combined_data_with_interactions &lt;- cbind(data_list$combined_data, interaction_terms)
+  
+  return(list(vacancy = data_list$vacancy, combined_data = combined_data_with_interactions))
+}
+
+# Modify VECM analysis to include exogenous variables with interaction terms
+vecm_analysis_with_interactions &lt;- function(data_list) {
+  # Retrieve the multivariate time series data with interaction terms
+  combined_data &lt;- data_list$combined_data
+  
+  print(combined_data)
+  # Johansen cointegration test
+  johansen_test &lt;- ca.jo(combined_data, type = &quot;trace&quot;, K = 5, ecdet = &quot;const&quot;) 
+  summary_test = summary(johansen_test)
+  print(summary_test)
+  test_stat &lt;- summary_test@teststat
+  critical_values &lt;- summary_test@cval
+  rank &lt;- sum(test_stat &gt; critical_values[, &quot;1pct&quot;])
+  print(rank)
+  
+  if (rank &gt; 0) {
+    cat(&quot;\nCointegration detected. Proceeding with VECM.\n&quot;)
+    # Estimate the VECM model, including interaction term in exogenous variables
+    vecm_model &lt;- VECM(combined_data, lag = 2, r = rank, exog = combined_data[, c(&quot;interaction_terms.income_quintile&quot;, &quot;interaction_terms.interaction_term&quot;)], include = &quot;const&quot;) 
+    summary(vecm_model)
+    return(vecm_model)
+  } else {
+    cat(&quot;\nNo cointegration detected. VECM is not appropriate.\n&quot;)
+    return(NULL)
+  }
+}
+
+
+
+# Execute the VAR analysis
+data_list &lt;- tryCatch({
+  load_and_prepare_data()
+}, error = function(e) {
+  cat(&quot;Error loading data:&quot;, e$message, &quot;\n&quot;)
+  return(NULL)
+})
+
+if (!is.null(data_list)) {
+  var_model &lt;- var_analysis(data_list)
+   # Perform VECM analysis
+  vecm_model &lt;- vecm_analysis(data_list)
+  print(vecm_model)
+  
+  # Only proceed with SVAR if VAR model was successfully created
+  if (!is.null(var_model)) {
+    # Structural VAR (SVAR) Analysis
+    svar_analysis &lt;- function(var_model, combined_data) {
+      # Define Amat (contemporaneous relationships) and Bmat (structural shocks)
+      A_mat &lt;- matrix(0, 4, 4)
+      A_mat[2, 1] &lt;- NA  # Housing_Price can be affected by Vacancy
+      A_mat[3, 1] &lt;- NA  # Mortgage_Rate can be affected by Vacancy
+      A_mat[3, 2] &lt;- NA  # Mortgage_Rate can be affected by Housing_Price
+      # A_mat[3, 3] &lt;- NA # This would imply Mortgage_Rate is contemporaneously affected by itself, which is typically set to 0 or a fixed value of 1 for identification.
+
+      # Define Bmat (diagonal with free parameters)
+      B_mat &lt;- diag(4)
+      diag(B_mat) &lt;- NA  # Keep diagonal elements free for identification
+
+      # Ensure both A_mat and B_mat are defined properly
+      if (all(is.na(A_mat)) || all(is.na(B_mat))) {
+        stop(&quot;A_mat or B_mat is improperly defined.&quot;)
+      }
+
+      # Estimate the SVAR model
+      tryCatch({
+        cat(&quot;\nEstimating SVAR model...\n&quot;)
+        svar_model &lt;- SVAR(var_model, Amat = A_mat, Bmat = B_mat)
+        if (is.null(svar_model)) {
+          stop(&quot;svar_model is not fitted correctly.&quot;)
+        }
+        summary(svar_model)
+
+        # Forecast Error Variance Decomposition
+        svar_fevd &lt;- fevd(svar_model, n.ahead = 8)
+        if (is.null(svar_fevd)) {
+          stop(&quot;svar_fevd is not fitted correctly.&quot;)
+        }
+        par(mar = c(2, 2, 2, 1))
+        plot(svar_fevd)
+
+        return(svar_model)
+      }, error = function(e) {
+        cat(&quot;Error in SVAR analysis:&quot;, e$message, &quot;\n&quot;)
+        return(NULL)
+      })
+    }
+
+    # Execute SVAR analysis
+    svar_model &lt;- svar_analysis(var_model, data_list$combined_data)
+    print(svar_model)
+  }
+  
+  # tvar section:
+   d_data &lt;- na.omit(diff(data_list$combined_data))
+  
+  # Extract threshold variable as numeric vector (must match rows of d_data)
+  th_var &lt;- d_data[, &quot;Disposable_Income&quot;]
+  
+  # Sanity check
+  cat(&quot;Data rows:&quot;, nrow(d_data), &quot;| Threshold vector length:&quot;, length(th_var), &quot;\n&quot;)
+  
+  d_data_ts &lt;- ts(d_data)
+
+  # Fit TVAR model
+  tvar_model &lt;- TVAR(d_data_ts,
+                                   lag = 1,
+                                   nthresh = 1,
+                                   thVar = th_var,
+                                   model = &quot;TAR&quot;,
+                                   commonInter = TRUE)
+
+  print(tvar_model)
+  plot(tvar_model)
+  
+}</code></pre>
 <pre><code>## 
 ## Stationarity Tests for Each Variable:
 ## 
@@ -794,7 +1093,901 @@ chunk like this:</p>
 ## Vacancy            0.3163       0.00000         0.000            0.0000
 ## Housing_Price      0.0000       0.09722         0.000            0.0000
 ## Mortgage_Rate      0.0000       0.00000         0.133            0.0000
-## Disposable_Income  0.0000       0.00000         0.000            0.3298</code></pre>
+## Disposable_Income  0.0000       0.00000         0.000            0.3298
+## Data rows: 151 | Threshold vector length: 151 
+## Best unique threshold -0.071499 
+## Model TVAR with  1  thresholds
+## 
+##                               Intercept  Vacancy -1 Housing_Price -1
+## Equation Vacancy            0.009664259 -0.43367376      -0.01022785
+## Equation Housing_Price      0.015784098 -0.03389378       0.85970723
+## Equation Mortgage_Rate     -0.003308911  0.01858590       0.03639200
+## Equation Disposable_Income  0.023144777  0.11065779      -0.33293422
+##                            Mortgage_Rate -1 Disposable_Income -1   Vacancy -1
+## Equation Vacancy                 0.46343050         1.643085e-01 -0.232802434
+## Equation Housing_Price          -0.04307962        -9.814167e-02 -0.012358122
+## Equation Mortgage_Rate           0.14925006        -2.653282e-05 -0.011902198
+## Equation Disposable_Income       1.27063751        -1.446418e-01 -0.001530035
+##                            Housing_Price -1 Mortgage_Rate -1
+## Equation Vacancy                 0.02829583      -0.09107911
+## Equation Housing_Price           0.92492524       0.09571477
+## Equation Mortgage_Rate           0.01783243       0.32906025
+## Equation Disposable_Income      -0.06761155       0.08772821
+##                            Disposable_Income -1
+## Equation Vacancy                   -0.075312079
+## Equation Housing_Price             -0.012959086
+## Equation Mortgage_Rate             -0.004353772
+## Equation Disposable_Income          0.003937465
+## 
+## Threshold value[1] &quot;-0.0714990000000011&quot;</code></pre>
+<p><img src="data:image/png;base64,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" width="672" /></p>
+<pre class="r"><code>data_list &lt;- tryCatch({
+  load_and_prepare_data_with_interactions()
+}, error = function(e) {
+  cat(&quot;Error loading data:&quot;, e$message, &quot;\n&quot;)
+  return(NULL)
+})
+
+# Perform the VECM analysis with interaction terms
+if (!is.null(data_list)) {
+  vecm_model &lt;- vecm_analysis_with_interactions(data_list)
+  print(vecm_model)
+  
+}</code></pre>
+<pre><code>##         data_list$combined_data.Vacancy data_list$combined_data.Housing_Price
+## 1987 Q1                             7.4                                63.733
+## 1987 Q2                             7.5                                64.132
+## 1987 Q3                             8.1                                64.468
+## 1987 Q4                             7.8                                64.972
+## 1988 Q1                             8.0                                65.546
+## 1988 Q2                             7.7                                66.218
+## 1988 Q3                             7.8                                66.786
+## 1988 Q4                             7.3                                67.270
+## 1989 Q1                             7.5                                67.623
+## 1989 Q2                             7.4                                67.901
+## 1989 Q3                             7.6                                68.091
+## 1989 Q4                             7.1                                68.342
+## 1990 Q1                             7.5                                68.580
+## 1990 Q2                             7.0                                68.913
+## 1990 Q3                             7.2                                69.322
+## 1990 Q4                             7.2                                69.787
+## 1991 Q1                             7.5                                70.408
+## 1991 Q2                             7.3                                71.067
+## 1991 Q3                             7.6                                71.685
+## 1991 Q4                             7.3                                72.185
+## 1992 Q1                             7.4                                72.574
+## 1992 Q2                             7.7                                72.822
+## 1992 Q3                             7.3                                73.064
+## 1992 Q4                             7.1                                73.277
+## 1993 Q1                             7.8                                73.616
+## 1993 Q2                             7.6                                73.967
+## 1993 Q3                             7.0                                74.410
+## 1993 Q4                             6.9                                74.867
+## 1994 Q1                             7.5                                75.295
+## 1994 Q2                             7.4                                75.695
+## 1994 Q3                             7.2                                76.040
+## 1994 Q4                             7.4                                76.271
+## 1995 Q1                             7.4                                76.420
+## 1995 Q2                             7.7                                76.487
+## 1995 Q3                             7.7                                76.521
+## 1995 Q4                             7.7                                76.497
+## 1996 Q1                             7.9                                76.527
+## 1996 Q2                             7.8                                76.587
+## 1996 Q3                             8.0                                76.790
+## 1996 Q4                             7.7                                77.038
+## 1997 Q1                             7.5                                77.296
+## 1997 Q2                             7.9                                77.504
+## 1997 Q3                             7.9                                77.560
+## 1997 Q4                             7.7                                77.478
+## 1998 Q1                             7.7                                77.228
+## 1998 Q2                             8.0                                76.912
+## 1998 Q3                             8.2                                76.381
+## 1998 Q4                             7.8                                75.971
+## 1999 Q1                             8.2                                75.533
+## 1999 Q2                             8.1                                75.249
+## 1999 Q3                             8.2                                75.137
+## 1999 Q4                             7.9                                75.316
+## 2000 Q1                             7.9                                75.768
+## 2000 Q2                             8.0                                76.252
+## 2000 Q3                             8.2                                76.517
+## 2000 Q4                             7.8                                76.594
+## 2001 Q1                             8.2                                76.575
+## 2001 Q2                             8.3                                76.292
+## 2001 Q3                             8.4                                76.031
+## 2001 Q4                             8.8                                75.844
+## 2002 Q1                             9.1                                75.701
+## 2002 Q2                             8.4                                75.656
+## 2002 Q3                             9.0                                75.815
+## 2002 Q4                             9.3                                76.081
+## 2003 Q1                             9.4                                76.398
+## 2003 Q2                             9.6                                76.603
+## 2003 Q3                             9.9                                76.712
+## 2003 Q4                            10.2                                76.732
+## 2004 Q1                            10.4                                76.629
+## 2004 Q2                            10.2                                76.598
+## 2004 Q3                            10.1                                76.580
+## 2004 Q4                            10.0                                76.465
+## 2005 Q1                            10.1                                76.396
+## 2005 Q2                             9.8                                76.329
+## 2005 Q3                             9.9                                76.384
+## 2005 Q4                             9.6                                76.661
+## 2006 Q1                             9.5                                77.031
+## 2006 Q2                             9.6                                77.517
+## 2006 Q3                             9.9                                77.886
+## 2006 Q4                             9.8                                78.132
+## 2007 Q1                            10.1                                78.199
+## 2007 Q2                             9.5                                78.173
+## 2007 Q3                             9.8                                78.171
+## 2007 Q4                             9.6                                78.114
+## 2008 Q1                            10.1                                78.199
+## 2008 Q2                            10.0                                78.206
+## 2008 Q3                             9.9                                78.350
+## 2008 Q4                            10.1                                78.701
+## 2009 Q1                            10.1                                79.209
+## 2009 Q2                            10.6                                79.701
+## 2009 Q3                            11.1                                80.063
+## 2009 Q4                            10.7                                80.317
+## 2010 Q1                            10.6                                80.341
+## 2010 Q2                            10.6                                80.305
+## 2010 Q3                            10.3                                80.171
+## 2010 Q4                             9.4                                80.080
+## 2011 Q1                             9.7                                80.027
+## 2011 Q2                             9.2                                79.992
+## 2011 Q3                             9.8                                80.078
+## 2011 Q4                             9.4                                80.370
+## 2012 Q1                             8.8                                80.691
+## 2012 Q2                             8.6                                81.069
+## 2012 Q3                             8.6                                81.413
+## 2012 Q4                             8.7                                81.656
+## 2013 Q1                             8.6                                81.739
+## 2013 Q2                             8.2                                81.728
+## 2013 Q3                             8.3                                81.632
+## 2013 Q4                             8.2                                81.514
+## 2014 Q1                             8.3                                81.428
+## 2014 Q2                             7.5                                81.400
+## 2014 Q3                             7.4                                81.666
+## 2014 Q4                             7.0                                82.125
+## 2015 Q1                             7.1                                82.602
+## 2015 Q2                             6.8                                83.049
+## 2015 Q3                             7.3                                83.419
+## 2015 Q4                             7.0                                83.646
+## 2016 Q1                             7.0                                83.703
+## 2016 Q2                             6.7                                83.630
+## 2016 Q3                             6.8                                83.557
+## 2016 Q4                             6.9                                83.491
+## 2017 Q1                             7.0                                83.531
+## 2017 Q2                             7.3                                83.597
+## 2017 Q3                             7.5                                83.912
+## 2017 Q4                             6.9                                84.322
+## 2018 Q1                             7.0                                84.865
+## 2018 Q2                             6.8                                85.399
+## 2018 Q3                             7.1                                85.842
+## 2018 Q4                             6.6                                86.151
+## 2019 Q1                             7.0                                86.312
+## 2019 Q2                             6.8                                86.409
+## 2019 Q3                             6.8                                86.633
+## 2019 Q4                             6.4                                86.849
+## 2020 Q1                             6.6                                87.164
+## 2020 Q2                             5.7                                87.374
+## 2020 Q3                             6.4                                87.878
+## 2020 Q4                             6.5                                88.559
+## 2021 Q1                             6.8                                89.375
+## 2021 Q2                             6.2                                90.196
+## 2021 Q3                             5.8                                90.860
+## 2021 Q4                             5.6                                91.408
+## 2022 Q1                             5.8                                91.753
+## 2022 Q2                             5.6                                92.000
+## 2022 Q3                             6.0                                92.198
+## 2022 Q4                             5.8                                92.445
+## 2023 Q1                             6.4                                92.715
+## 2023 Q2                             6.3                                92.982
+## 2023 Q3                             6.6                                93.612
+## 2023 Q4                             6.6                                94.437
+## 2024 Q1                             6.6                                95.361
+## 2024 Q2                             6.6                                96.365
+## 2024 Q3                             6.9                                97.193
+## 2024 Q4                             6.9                                97.899
+##         data_list$combined_data.Mortgage_Rate
+## 1987 Q1                                  9.37
+## 1987 Q2                                  9.32
+## 1987 Q3                                  9.21
+## 1987 Q4                                  9.04
+## 1988 Q1                                  9.08
+## 1988 Q2                                  9.06
+## 1988 Q3                                  9.09
+## 1988 Q4                                  9.11
+## 1989 Q1                                  9.07
+## 1989 Q2                                  9.03
+## 1989 Q3                                  9.05
+## 1989 Q4                                  9.03
+## 1990 Q1                                  9.03
+## 1990 Q2                                  9.26
+## 1990 Q3                                  9.43
+## 1990 Q4                                 10.27
+## 1991 Q1                                 10.37
+## 1991 Q2                                 10.47
+## 1991 Q3                                 10.52
+## 1991 Q4                                 10.48
+## 1992 Q1                                 10.81
+## 1992 Q2                                 10.70
+## 1992 Q3                                 10.70
+## 1992 Q4                                 10.66
+## 1993 Q1                                 10.44
+## 1993 Q2                                 10.35
+## 1993 Q3                                 10.36
+## 1993 Q4                                 10.30
+## 1994 Q1                                 10.23
+## 1994 Q2                                 10.23
+## 1994 Q3                                 10.27
+## 1994 Q4                                 10.35
+## 1995 Q1                                 10.34
+## 1995 Q2                                 10.30
+## 1995 Q3                                 10.33
+## 1995 Q4                                 10.63
+## 1996 Q1                                 10.91
+## 1996 Q2                                 10.99
+## 1996 Q3                                 11.02
+## 1996 Q4                                 11.18
+## 1997 Q1                                 11.21
+## 1997 Q2                                 11.58
+## 1997 Q3                                 11.36
+## 1997 Q4                                 10.97
+## 1998 Q1                                 10.79
+## 1998 Q2                                 10.66
+## 1998 Q3                                 10.60
+## 1998 Q4                                 10.55
+## 1999 Q1                                 10.60
+## 1999 Q2                                 10.66
+## 1999 Q3                                 10.69
+## 1999 Q4                                 10.64
+## 2000 Q1                                 10.61
+## 2000 Q2                                 10.50
+## 2000 Q3                                 10.53
+## 2000 Q4                                 10.34
+## 2001 Q1                                 10.16
+## 2001 Q2                                  9.94
+## 2001 Q3                                  9.84
+## 2001 Q4                                  9.92
+## 2002 Q1                                  9.87
+## 2002 Q2                                  9.85
+## 2002 Q3                                  9.96
+## 2002 Q4                                  9.92
+## 2003 Q1                                  9.99
+## 2003 Q2                                 10.05
+## 2003 Q3                                 10.19
+## 2003 Q4                                 10.19
+## 2004 Q1                                 10.30
+## 2004 Q2                                 10.28
+## 2004 Q3                                 10.32
+## 2004 Q4                                 10.40
+## 2005 Q1                                 10.52
+## 2005 Q2                                 10.58
+## 2005 Q3                                 10.58
+## 2005 Q4                                 10.51
+## 2006 Q1                                 10.35
+## 2006 Q2                                 10.40
+## 2006 Q3                                 10.39
+## 2006 Q4                                 10.38
+## 2007 Q1                                 10.44
+## 2007 Q2                                 10.46
+## 2007 Q3                                 10.49
+## 2007 Q4                                 10.44
+## 2008 Q1                                 10.57
+## 2008 Q2                                 10.71
+## 2008 Q3                                 10.67
+## 2008 Q4                                 10.65
+## 2009 Q1                                 10.53
+## 2009 Q2                                 10.40
+## 2009 Q3                                 10.40
+## 2009 Q4                                 10.42
+## 2010 Q1                                 10.38
+## 2010 Q2                                 10.33
+## 2010 Q3                                 10.28
+## 2010 Q4                                 10.22
+## 2011 Q1                                 10.12
+## 2011 Q2                                 10.24
+## 2011 Q3                                 10.31
+## 2011 Q4                                 10.39
+## 2012 Q1                                 10.44
+## 2012 Q2                                 10.46
+## 2012 Q3                                 10.71
+## 2012 Q4                                 10.68
+## 2013 Q1                                 10.77
+## 2013 Q2                                 10.80
+## 2013 Q3                                 10.81
+## 2013 Q4                                 10.71
+## 2014 Q1                                 10.60
+## 2014 Q2                                 10.55
+## 2014 Q3                                 10.56
+## 2014 Q4                                 10.69
+## 2015 Q1                                 10.78
+## 2015 Q2                                 10.91
+## 2015 Q3                                 10.86
+## 2015 Q4                                 10.98
+## 2016 Q1                                 11.22
+## 2016 Q2                                 11.19
+## 2016 Q3                                 11.07
+## 2016 Q4                                 11.11
+## 2017 Q1                                 10.99
+## 2017 Q2                                 11.03
+## 2017 Q3                                 10.97
+## 2017 Q4                                 10.93
+## 2018 Q1                                 10.69
+## 2018 Q2                                 10.50
+## 2018 Q3                                 10.48
+## 2018 Q4                                 10.20
+## 2019 Q1                                 10.04
+## 2019 Q2                                 10.19
+## 2019 Q3                                 10.07
+## 2019 Q4                                 10.03
+## 2020 Q1                                  9.82
+## 2020 Q2                                  9.87
+## 2020 Q3                                  9.81
+## 2020 Q4                                  9.68
+## 2021 Q1                                  9.96
+## 2021 Q2                                 10.09
+## 2021 Q3                                 10.21
+## 2021 Q4                                 10.22
+## 2022 Q1                                 10.17
+## 2022 Q2                                 10.05
+## 2022 Q3                                 10.03
+## 2022 Q4                                 10.16
+## 2023 Q1                                 10.10
+## 2023 Q2                                  9.95
+## 2023 Q3                                  9.92
+## 2023 Q4                                  9.82
+## 2024 Q1                                  9.82
+## 2024 Q2                                  9.79
+## 2024 Q3                                  9.72
+## 2024 Q4                                  9.74
+##         data_list$combined_data.Disposable_Income
+## 1987 Q1                                 11.976906
+## 1987 Q2                                 12.125118
+## 1987 Q3                                 11.996017
+## 1987 Q4                                 11.851825
+## 1988 Q1                                 11.777922
+## 1988 Q2                                 11.748150
+## 1988 Q3                                 11.697093
+## 1988 Q4                                 11.573993
+## 1989 Q1                                 11.577244
+## 1989 Q2                                 11.746960
+## 1989 Q3                                 11.810156
+## 1989 Q4                                 11.760331
+## 1990 Q1                                 11.659860
+## 1990 Q2                                 11.606506
+## 1990 Q3                                 11.583384
+## 1990 Q4                                 11.598423
+## 1991 Q1                                 11.565484
+## 1991 Q2                                 11.419594
+## 1991 Q3                                 11.306831
+## 1991 Q4                                 11.110772
+## 1992 Q1                                 10.858007
+## 1992 Q2                                 10.688985
+## 1992 Q3                                 10.551259
+## 1992 Q4                                 10.467593
+## 1993 Q1                                 10.430733
+## 1993 Q2                                 10.365702
+## 1993 Q3                                 10.417195
+## 1993 Q4                                 10.380138
+## 1994 Q1                                 10.401077
+## 1994 Q2                                 10.466155
+## 1994 Q3                                 10.600190
+## 1994 Q4                                 10.713335
+## 1995 Q1                                 10.903623
+## 1995 Q2                                 11.096832
+## 1995 Q3                                 11.203198
+## 1995 Q4                                 11.242819
+## 1996 Q1                                 11.263491
+## 1996 Q2                                 11.292664
+## 1996 Q3                                 11.341343
+## 1996 Q4                                 11.400413
+## 1997 Q1                                 11.361940
+## 1997 Q2                                 11.364968
+## 1997 Q3                                 11.373444
+## 1997 Q4                                 11.323085
+## 1998 Q1                                 11.176228
+## 1998 Q2                                 11.195718
+## 1998 Q3                                 11.183267
+## 1998 Q4                                 11.251900
+## 1999 Q1                                 11.306154
+## 1999 Q2                                 11.474377
+## 1999 Q3                                 11.593912
+## 1999 Q4                                 11.602639
+## 2000 Q1                                 11.581974
+## 2000 Q2                                 11.727593
+## 2000 Q3                                 11.883636
+## 2000 Q4                                 12.072070
+## 2001 Q1                                 12.175219
+## 2001 Q2                                 12.386421
+## 2001 Q3                                 12.329806
+## 2001 Q4                                 12.682582
+## 2002 Q1                                 12.456402
+## 2002 Q2                                 12.362782
+## 2002 Q3                                 12.374393
+## 2002 Q4                                 12.341276
+## 2003 Q1                                 12.358857
+## 2003 Q2                                 12.299930
+## 2003 Q3                                 12.144751
+## 2003 Q4                                 12.215914
+## 2004 Q1                                 12.219274
+## 2004 Q2                                 12.157168
+## 2004 Q3                                 12.272636
+## 2004 Q4                                 12.277015
+## 2005 Q1                                 14.799802
+## 2005 Q2                                 14.828576
+## 2005 Q3                                 15.139959
+## 2005 Q4                                 15.028550
+## 2006 Q1                                 14.989443
+## 2006 Q2                                 15.044255
+## 2006 Q3                                 15.367228
+## 2006 Q4                                 15.509711
+## 2007 Q1                                 15.526607
+## 2007 Q2                                 15.632510
+## 2007 Q3                                 15.712123
+## 2007 Q4                                 15.846367
+## 2008 Q1                                 15.775857
+## 2008 Q2                                 15.326612
+## 2008 Q3                                 15.546547
+## 2008 Q4                                 15.721360
+## 2009 Q1                                 15.597500
+## 2009 Q2                                 15.251967
+## 2009 Q3                                 15.085880
+## 2009 Q4                                 14.896385
+## 2010 Q1                                 14.514940
+## 2010 Q2                                 14.069775
+## 2010 Q3                                 13.917807
+## 2010 Q4                                 13.580863
+## 2011 Q1                                 13.308460
+## 2011 Q2                                 13.057706
+## 2011 Q3                                 12.944597
+## 2011 Q4                                 12.749684
+## 2012 Q1                                 12.237057
+## 2012 Q2                                 12.034062
+## 2012 Q3                                 12.083103
+## 2012 Q4                                 11.754027
+## 2013 Q1                                 12.006595
+## 2013 Q2                                 11.794388
+## 2013 Q3                                 11.837711
+## 2013 Q4                                 11.985283
+## 2014 Q1                                 11.883750
+## 2014 Q2                                 11.621125
+## 2014 Q3                                 11.646930
+## 2014 Q4                                 11.631975
+## 2015 Q1                                 11.556603
+## 2015 Q2                                 11.485104
+## 2015 Q3                                 11.606452
+## 2015 Q4                                 11.738945
+## 2016 Q1                                 11.763217
+## 2016 Q2                                 11.766079
+## 2016 Q3                                 11.769821
+## 2016 Q4                                 11.865783
+## 2017 Q1                                 11.723728
+## 2017 Q2                                 11.756950
+## 2017 Q3                                 11.818401
+## 2017 Q4                                 11.816667
+## 2018 Q1                                 11.644530
+## 2018 Q2                                 11.598338
+## 2018 Q3                                 11.619535
+## 2018 Q4                                 11.666344
+## 2019 Q1                                 11.499870
+## 2019 Q2                                 11.626952
+## 2019 Q3                                 11.646524
+## 2019 Q4                                 11.727526
+## 2020 Q1                                 11.587379
+## 2020 Q2                                  9.739372
+## 2020 Q3                                 10.067065
+## 2020 Q4                                 10.404484
+## 2021 Q1                                  9.084982
+## 2021 Q2                                  9.889169
+## 2021 Q3                                 10.057423
+## 2021 Q4                                 10.281331
+## 2022 Q1                                 10.512948
+## 2022 Q2                                 10.719184
+## 2022 Q3                                 10.598597
+## 2022 Q4                                 10.780190
+## 2023 Q1                                 10.635344
+## 2023 Q2                                 10.675248
+## 2023 Q3                                 10.866162
+## 2023 Q4                                 11.230787
+## 2024 Q1                                 11.160266
+## 2024 Q2                                 11.159142
+## 2024 Q3                                 11.313115
+## 2024 Q4                                 11.284959
+##         interaction_terms.income_quintile interaction_terms.interaction_term
+## 1987 Q1                                 4                          47.907624
+## 1987 Q2                                 4                          48.500472
+## 1987 Q3                                 4                          47.984068
+## 1987 Q4                                 4                          47.407300
+## 1988 Q1                                 3                          35.333766
+## 1988 Q2                                 3                          35.244450
+## 1988 Q3                                 3                          35.091279
+## 1988 Q4                                 2                          23.147986
+## 1989 Q1                                 2                          23.154488
+## 1989 Q2                                 3                          35.240880
+## 1989 Q3                                 4                          47.240624
+## 1989 Q4                                 3                          35.280993
+## 1990 Q1                                 3                          34.979580
+## 1990 Q2                                 3                          34.819518
+## 1990 Q3                                 2                          23.166768
+## 1990 Q4                                 3                          34.795269
+## 1991 Q1                                 2                          23.130968
+## 1991 Q2                                 2                          22.839188
+## 1991 Q3                                 2                          22.613662
+## 1991 Q4                                 1                          11.110772
+## 1992 Q1                                 1                          10.858007
+## 1992 Q2                                 1                          10.688985
+## 1992 Q3                                 1                          10.551259
+## 1992 Q4                                 1                          10.467593
+## 1993 Q1                                 1                          10.430733
+## 1993 Q2                                 1                          10.365702
+## 1993 Q3                                 1                          10.417195
+## 1993 Q4                                 1                          10.380138
+## 1994 Q1                                 1                          10.401077
+## 1994 Q2                                 1                          10.466155
+## 1994 Q3                                 1                          10.600190
+## 1994 Q4                                 1                          10.713335
+## 1995 Q1                                 1                          10.903623
+## 1995 Q2                                 1                          11.096832
+## 1995 Q3                                 2                          22.406396
+## 1995 Q4                                 2                          22.485638
+## 1996 Q1                                 2                          22.526982
+## 1996 Q2                                 2                          22.585328
+## 1996 Q3                                 2                          22.682686
+## 1996 Q4                                 2                          22.800826
+## 1997 Q1                                 2                          22.723880
+## 1997 Q2                                 2                          22.729936
+## 1997 Q3                                 2                          22.746888
+## 1997 Q4                                 2                          22.646170
+## 1998 Q1                                 2                          22.352456
+## 1998 Q2                                 2                          22.391436
+## 1998 Q3                                 2                          22.366534
+## 1998 Q4                                 2                          22.503800
+## 1999 Q1                                 2                          22.612308
+## 1999 Q2                                 2                          22.948754
+## 1999 Q3                                 3                          34.781736
+## 1999 Q4                                 3                          34.807917
+## 2000 Q1                                 2                          23.163948
+## 2000 Q2                                 3                          35.182779
+## 2000 Q3                                 4                          47.534544
+## 2000 Q4                                 4                          48.288280
+## 2001 Q1                                 4                          48.700876
+## 2001 Q2                                 5                          61.932105
+## 2001 Q3                                 4                          49.319224
+## 2001 Q4                                 5                          63.412910
+## 2002 Q1                                 5                          62.282010
+## 2002 Q2                                 4                          49.451128
+## 2002 Q3                                 4                          49.497572
+## 2002 Q4                                 4                          49.365104
+## 2003 Q1                                 4                          49.435428
+## 2003 Q2                                 4                          49.199720
+## 2003 Q3                                 4                          48.579004
+## 2003 Q4                                 4                          48.863656
+## 2004 Q1                                 4                          48.877096
+## 2004 Q2                                 4                          48.628672
+## 2004 Q3                                 4                          49.090544
+## 2004 Q4                                 4                          49.108060
+## 2005 Q1                                 5                          73.999010
+## 2005 Q2                                 5                          74.142880
+## 2005 Q3                                 5                          75.699795
+## 2005 Q4                                 5                          75.142750
+## 2006 Q1                                 5                          74.947215
+## 2006 Q2                                 5                          75.221275
+## 2006 Q3                                 5                          76.836140
+## 2006 Q4                                 5                          77.548555
+## 2007 Q1                                 5                          77.633035
+## 2007 Q2                                 5                          78.162550
+## 2007 Q3                                 5                          78.560615
+## 2007 Q4                                 5                          79.231835
+## 2008 Q1                                 5                          78.879285
+## 2008 Q2                                 5                          76.633060
+## 2008 Q3                                 5                          77.732735
+## 2008 Q4                                 5                          78.606800
+## 2009 Q1                                 5                          77.987500
+## 2009 Q2                                 5                          76.259835
+## 2009 Q3                                 5                          75.429400
+## 2009 Q4                                 5                          74.481925
+## 2010 Q1                                 5                          72.574700
+## 2010 Q2                                 5                          70.348875
+## 2010 Q3                                 5                          69.589035
+## 2010 Q4                                 5                          67.904315
+## 2011 Q1                                 5                          66.542300
+## 2011 Q2                                 5                          65.288530
+## 2011 Q3                                 5                          64.722985
+## 2011 Q4                                 5                          63.748420
+## 2012 Q1                                 4                          48.948228
+## 2012 Q2                                 4                          48.136248
+## 2012 Q3                                 4                          48.332412
+## 2012 Q4                                 3                          35.262081
+## 2013 Q1                                 4                          48.026380
+## 2013 Q2                                 3                          35.383164
+## 2013 Q3                                 4                          47.350844
+## 2013 Q4                                 4                          47.941132
+## 2014 Q1                                 4                          47.535000
+## 2014 Q2                                 3                          34.863375
+## 2014 Q3                                 3                          34.940790
+## 2014 Q4                                 3                          34.895925
+## 2015 Q1                                 2                          23.113206
+## 2015 Q2                                 2                          22.970208
+## 2015 Q3                                 3                          34.819356
+## 2015 Q4                                 3                          35.216835
+## 2016 Q1                                 3                          35.289651
+## 2016 Q2                                 3                          35.298237
+## 2016 Q3                                 3                          35.309463
+## 2016 Q4                                 4                          47.463132
+## 2017 Q1                                 3                          35.171184
+## 2017 Q2                                 3                          35.270850
+## 2017 Q3                                 4                          47.273604
+## 2017 Q4                                 4                          47.266668
+## 2018 Q1                                 3                          34.933590
+## 2018 Q2                                 3                          34.795014
+## 2018 Q3                                 3                          34.858605
+## 2018 Q4                                 3                          34.999032
+## 2019 Q1                                 2                          22.999740
+## 2019 Q2                                 3                          34.880856
+## 2019 Q3                                 3                          34.939572
+## 2019 Q4                                 3                          35.182578
+## 2020 Q1                                 2                          23.174758
+## 2020 Q2                                 1                           9.739372
+## 2020 Q3                                 1                          10.067065
+## 2020 Q4                                 1                          10.404484
+## 2021 Q1                                 1                           9.084982
+## 2021 Q2                                 1                           9.889169
+## 2021 Q3                                 1                          10.057423
+## 2021 Q4                                 1                          10.281331
+## 2022 Q1                                 1                          10.512948
+## 2022 Q2                                 1                          10.719184
+## 2022 Q3                                 1                          10.598597
+## 2022 Q4                                 1                          10.780190
+## 2023 Q1                                 1                          10.635344
+## 2023 Q2                                 1                          10.675248
+## 2023 Q3                                 1                          10.866162
+## 2023 Q4                                 2                          22.461574
+## 2024 Q1                                 1                          11.160266
+## 2024 Q2                                 1                          11.159142
+## 2024 Q3                                 2                          22.626230
+## 2024 Q4                                 2                          22.569918
+## 
+## ###################### 
+## # Johansen-Procedure # 
+## ###################### 
+## 
+## Test type: trace statistic , without linear trend and constant in cointegration 
+## 
+## Eigenvalues (lambda):
+## [1]  3.162422e-01  1.792449e-01  9.189197e-02  6.849381e-02  4.053102e-02
+## [6]  1.302999e-02 -1.688115e-16
+## 
+## Values of teststatistic and critical values of test:
+## 
+##            test 10pct   5pct   1pct
+## r &lt;= 5 |   1.93  7.52   9.24  12.97
+## r &lt;= 4 |   8.01 17.85  19.96  24.60
+## r &lt;= 3 |  18.44 32.00  34.91  41.07
+## r &lt;= 2 |  32.61 49.65  53.12  60.16
+## r &lt;= 1 |  61.65 71.86  76.07  84.45
+## r = 0  | 117.53 97.18 102.14 111.01
+## 
+## Eigenvectors, normalised to first column:
+## (These are the cointegration relations)
+## 
+##                                              data_list.combined_data.Vacancy.l5
+## data_list.combined_data.Vacancy.l5                                   1.00000000
+## data_list.combined_data.Housing_Price.l5                            -0.05422074
+## data_list.combined_data.Mortgage_Rate.l5                             2.22162917
+## data_list.combined_data.Disposable_Income.l5                        -0.49553041
+## interaction_terms.income_quintile.l5                                 1.40134015
+## interaction_terms.interaction_term.l5                               -0.08283521
+## constant                                                           -23.72299145
+##                                              data_list.combined_data.Housing_Price.l5
+## data_list.combined_data.Vacancy.l5                                          1.0000000
+## data_list.combined_data.Housing_Price.l5                                    0.1347775
+## data_list.combined_data.Mortgage_Rate.l5                                   -0.7716891
+## data_list.combined_data.Disposable_Income.l5                               11.3013540
+## interaction_terms.income_quintile.l5                                       18.2713974
+## interaction_terms.interaction_term.l5                                      -1.9293015
+## constant                                                                 -128.7061652
+##                                              data_list.combined_data.Mortgage_Rate.l5
+## data_list.combined_data.Vacancy.l5                                         1.00000000
+## data_list.combined_data.Housing_Price.l5                                   0.04705923
+## data_list.combined_data.Mortgage_Rate.l5                                  -0.39947906
+## data_list.combined_data.Disposable_Income.l5                               0.06202962
+## interaction_terms.income_quintile.l5                                       0.64204115
+## interaction_terms.interaction_term.l5                                     -0.10287788
+## constant                                                                  -6.22068384
+##                                              data_list.combined_data.Disposable_Income.l5
+## data_list.combined_data.Vacancy.l5                                              1.0000000
+## data_list.combined_data.Housing_Price.l5                                       -0.2598928
+## data_list.combined_data.Mortgage_Rate.l5                                       -6.7485965
+## data_list.combined_data.Disposable_Income.l5                                    3.2850493
+## interaction_terms.income_quintile.l5                                           22.1837181
+## interaction_terms.interaction_term.l5                                          -1.5759726
+## constant                                                                       34.8417539
+##                                              interaction_terms.income_quintile.l5
+## data_list.combined_data.Vacancy.l5                                      1.0000000
+## data_list.combined_data.Housing_Price.l5                               -0.3446983
+## data_list.combined_data.Mortgage_Rate.l5                               -4.8791124
+## data_list.combined_data.Disposable_Income.l5                           -0.9363540
+## interaction_terms.income_quintile.l5                                  -16.7066648
+## interaction_terms.interaction_term.l5                                   1.0762768
+## constant                                                               88.9772893
+##                                              interaction_terms.interaction_term.l5
+## data_list.combined_data.Vacancy.l5                                     1.000000000
+## data_list.combined_data.Housing_Price.l5                               0.199479133
+## data_list.combined_data.Mortgage_Rate.l5                              -0.914564892
+## data_list.combined_data.Disposable_Income.l5                           0.184139714
+## interaction_terms.income_quintile.l5                                   0.361749465
+## interaction_terms.interaction_term.l5                                 -0.007242477
+## constant                                                             -17.225874269
+##                                                 constant
+## data_list.combined_data.Vacancy.l5             1.0000000
+## data_list.combined_data.Housing_Price.l5       0.5468379
+## data_list.combined_data.Mortgage_Rate.l5      -5.2224063
+## data_list.combined_data.Disposable_Income.l5   3.6662808
+## interaction_terms.income_quintile.l5           8.4411916
+## interaction_terms.interaction_term.l5         -0.8449897
+## constant                                     -37.7407423
+## 
+## Weights W:
+## (This is the loading matrix)
+## 
+##                                             data_list.combined_data.Vacancy.l5
+## data_list.combined_data.Vacancy.d                                 -0.031985384
+## data_list.combined_data.Housing_Price.d                           -0.038257663
+## data_list.combined_data.Mortgage_Rate.d                           -0.019494315
+## data_list.combined_data.Disposable_Income.d                       -0.016894624
+## interaction_terms.income_quintile.d                                0.007241459
+## interaction_terms.interaction_term.d                              -0.036980343
+##                                             data_list.combined_data.Housing_Price.l5
+## data_list.combined_data.Vacancy.d                                        0.011149142
+## data_list.combined_data.Housing_Price.d                                 -0.003789643
+## data_list.combined_data.Mortgage_Rate.d                                  0.000372587
+## data_list.combined_data.Disposable_Income.d                             -0.022355723
+## interaction_terms.income_quintile.d                                      0.038346901
+## interaction_terms.interaction_term.d                                     0.459584031
+##                                             data_list.combined_data.Mortgage_Rate.l5
+## data_list.combined_data.Vacancy.d                                       -0.044031637
+## data_list.combined_data.Housing_Price.d                                  0.004087279
+## data_list.combined_data.Mortgage_Rate.d                                  0.018033122
+## data_list.combined_data.Disposable_Income.d                              0.116679951
+## interaction_terms.income_quintile.d                                      0.159763072
+## interaction_terms.interaction_term.d                                     2.306759903
+##                                             data_list.combined_data.Disposable_Income.l5
+## data_list.combined_data.Vacancy.d                                          -0.0046832847
+## data_list.combined_data.Housing_Price.d                                    -0.0009133696
+## data_list.combined_data.Mortgage_Rate.d                                     0.0028695875
+## data_list.combined_data.Disposable_Income.d                                -0.0020415427
+## interaction_terms.income_quintile.d                                        -0.0087713840
+## interaction_terms.interaction_term.d                                       -0.0957529420
+##                                             interaction_terms.income_quintile.l5
+## data_list.combined_data.Vacancy.d                                   0.0041733147
+## data_list.combined_data.Housing_Price.d                            -0.0008441686
+## data_list.combined_data.Mortgage_Rate.d                             0.0032962640
+## data_list.combined_data.Disposable_Income.d                        -0.0017272078
+## interaction_terms.income_quintile.d                                 0.0059148308
+## interaction_terms.interaction_term.d                                0.0523983369
+##                                             interaction_terms.interaction_term.l5
+## data_list.combined_data.Vacancy.d                                    -0.013613030
+## data_list.combined_data.Housing_Price.d                               0.001088022
+## data_list.combined_data.Mortgage_Rate.d                               0.000298537
+## data_list.combined_data.Disposable_Income.d                          -0.010403939
+## interaction_terms.income_quintile.d                                  -0.003443199
+## interaction_terms.interaction_term.d                                 -0.088276850
+##                                                  constant
+## data_list.combined_data.Vacancy.d           -6.308096e-15
+## data_list.combined_data.Housing_Price.d     -2.868492e-14
+## data_list.combined_data.Mortgage_Rate.d     -1.954757e-14
+## data_list.combined_data.Disposable_Income.d -9.135211e-14
+## interaction_terms.income_quintile.d          2.216760e-13
+## interaction_terms.interaction_term.d         2.706306e-12
+## 
+## [1] 1
+## 
+## Cointegration detected. Proceeding with VECM.
+##                                                            ECT    Intercept
+## Equation data_list$combined_data.Vacancy           -0.06088261  0.035148816
+## Equation data_list$combined_data.Housing_Price     -0.02108115  0.089235479
+## Equation data_list$combined_data.Mortgage_Rate      0.02640388 -0.010742522
+## Equation data_list$combined_data.Disposable_Income  0.08161670 -0.001908185
+## Equation interaction_terms.income_quintile          0.10781984 -0.355061912
+## Equation interaction_terms.interaction_term         1.50172778 -3.966324257
+##                                                    data_list$combined_data.Vacancy -1
+## Equation data_list$combined_data.Vacancy                                 -0.232086752
+## Equation data_list$combined_data.Housing_Price                           -0.005777128
+## Equation data_list$combined_data.Mortgage_Rate                            0.010086260
+## Equation data_list$combined_data.Disposable_Income                       -0.085649029
+## Equation interaction_terms.income_quintile                                0.186320250
+## Equation interaction_terms.interaction_term                               1.961076944
+##                                                    data_list$combined_data.Housing_Price -1
+## Equation data_list$combined_data.Vacancy                                        -0.05946859
+## Equation data_list$combined_data.Housing_Price                                   1.44005103
+## Equation data_list$combined_data.Mortgage_Rate                                   0.09702233
+## Equation data_list$combined_data.Disposable_Income                              -0.27162919
+## Equation interaction_terms.income_quintile                                      -0.41629913
+## Equation interaction_terms.interaction_term                                     -6.09256964
+##                                                    data_list$combined_data.Mortgage_Rate -1
+## Equation data_list$combined_data.Vacancy                                         0.07773813
+## Equation data_list$combined_data.Housing_Price                                   0.05700679
+## Equation data_list$combined_data.Mortgage_Rate                                   0.27881723
+## Equation data_list$combined_data.Disposable_Income                               0.29589557
+## Equation interaction_terms.income_quintile                                      -0.23790844
+## Equation interaction_terms.interaction_term                                     -2.21032971
+##                                                    data_list$combined_data.Disposable_Income -1
+## Equation data_list$combined_data.Vacancy                                             0.12926597
+## Equation data_list$combined_data.Housing_Price                                      -0.10316964
+## Equation data_list$combined_data.Mortgage_Rate                                       0.07516841
+## Equation data_list$combined_data.Disposable_Income                                  -0.23029590
+## Equation interaction_terms.income_quintile                                           0.39972538
+## Equation interaction_terms.interaction_term                                          4.77036793
+##                                                    interaction_terms.income_quintile -1
+## Equation data_list$combined_data.Vacancy                                     0.15339356
+## Equation data_list$combined_data.Housing_Price                              -0.13550791
+## Equation data_list$combined_data.Mortgage_Rate                               0.03031795
+## Equation data_list$combined_data.Disposable_Income                          -0.57558486
+## Equation interaction_terms.income_quintile                                  -0.04771150
+## Equation interaction_terms.interaction_term                                 -1.31447717
+##                                                    interaction_terms.interaction_term -1
+## Equation data_list$combined_data.Vacancy                                    -0.021869965
+## Equation data_list$combined_data.Housing_Price                               0.012037600
+## Equation data_list$combined_data.Mortgage_Rate                              -0.008221894
+## Equation data_list$combined_data.Disposable_Income                           0.054834017
+## Equation interaction_terms.income_quintile                                  -0.032073171
+## Equation interaction_terms.interaction_term                                 -0.318425903
+##                                                    data_list$combined_data.Vacancy -2
+## Equation data_list$combined_data.Vacancy                                   0.15219408
+## Equation data_list$combined_data.Housing_Price                             0.03828856
+## Equation data_list$combined_data.Mortgage_Rate                             0.02073598
+## Equation data_list$combined_data.Disposable_Income                        -0.14863844
+## Equation interaction_terms.income_quintile                                -0.06693219
+## Equation interaction_terms.interaction_term                               -1.20746896
+##                                                    data_list$combined_data.Housing_Price -2
+## Equation data_list$combined_data.Vacancy                                       -0.006113501
+## Equation data_list$combined_data.Housing_Price                                 -0.632054789
+## Equation data_list$combined_data.Mortgage_Rate                                 -0.090411506
+## Equation data_list$combined_data.Disposable_Income                              0.262122713
+## Equation interaction_terms.income_quintile                                      0.434643226
+## Equation interaction_terms.interaction_term                                     6.084256129
+##                                                    data_list$combined_data.Mortgage_Rate -2
+## Equation data_list$combined_data.Vacancy                                        -0.19648887
+## Equation data_list$combined_data.Housing_Price                                  -0.01617130
+## Equation data_list$combined_data.Mortgage_Rate                                   0.09914188
+## Equation data_list$combined_data.Disposable_Income                              -0.03625343
+## Equation interaction_terms.income_quintile                                       0.05174297
+## Equation interaction_terms.interaction_term                                      0.57639298
+##                                                    data_list$combined_data.Disposable_Income -2
+## Equation data_list$combined_data.Vacancy                                             0.02945644
+## Equation data_list$combined_data.Housing_Price                                      -0.01060123
+## Equation data_list$combined_data.Mortgage_Rate                                       0.11037150
+## Equation data_list$combined_data.Disposable_Income                                  -0.19825748
+## Equation interaction_terms.income_quintile                                           0.18669599
+## Equation interaction_terms.interaction_term                                          2.01013217
+##                                                    interaction_terms.income_quintile -2
+## Equation data_list$combined_data.Vacancy                                   -0.268988150
+## Equation data_list$combined_data.Housing_Price                             -0.008189518
+## Equation data_list$combined_data.Mortgage_Rate                              0.295441288
+## Equation data_list$combined_data.Disposable_Income                         -0.849833293
+## Equation interaction_terms.income_quintile                                 -0.621286884
+## Equation interaction_terms.interaction_term                                -9.826115908
+##                                                    interaction_terms.interaction_term -2
+## Equation data_list$combined_data.Vacancy                                    0.0103382159
+## Equation data_list$combined_data.Housing_Price                              0.0003939402
+## Equation data_list$combined_data.Mortgage_Rate                             -0.0266770471
+## Equation data_list$combined_data.Disposable_Income                          0.0753639956
+## Equation interaction_terms.income_quintile                                  0.0255954913
+## Equation interaction_terms.interaction_term                                 0.5138126497
+##                                                    interaction_terms.income_quintile
+## Equation data_list$combined_data.Vacancy                                 -0.06326769
+## Equation data_list$combined_data.Housing_Price                           -0.04170782
+## Equation data_list$combined_data.Mortgage_Rate                            0.01487362
+## Equation data_list$combined_data.Disposable_Income                       -0.04690021
+## Equation interaction_terms.income_quintile                                0.31932749
+## Equation interaction_terms.interaction_term                               3.35777593
+##                                                    interaction_terms.interaction_term
+## Equation data_list$combined_data.Vacancy                                 0.0041610389
+## Equation data_list$combined_data.Housing_Price                           0.0020717240
+## Equation data_list$combined_data.Mortgage_Rate                          -0.0008901567
+## Equation data_list$combined_data.Disposable_Income                       0.0036453998
+## Equation interaction_terms.income_quintile                              -0.0164791595
+## Equation interaction_terms.interaction_term                             -0.1671015870</code></pre>
 <p>Summary Interpretation</p>
 <pre><code>All variables are I(1) and became stationary after differencing.
 
