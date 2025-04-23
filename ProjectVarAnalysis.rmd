@@ -7,18 +7,16 @@ output:
   pdf_document: default
 ---
 
-```{r setup, include=FALSE}
+{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-```
 
-## R Markdown
+R Markdown
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see http://rmarkdown.rstudio.com.
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+When you click the Knit button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
 
-
-```{r pressure, echo=FALSE}
+{r pressure, echo=TRUE}
 # Load all required packages for VAR analysis
 library(zoo)
 library(lubridate)
@@ -181,6 +179,57 @@ var_analysis <- function(data_list) {
   return(var_model)
 }
 
+create_interaction_terms <- function(disposable_income) {
+  # Create income quintile based on disposable_income
+  income_quintile <- cut(disposable_income, breaks = quantile(disposable_income, probs = 0:5/5), 
+                         labels = FALSE, include.lowest = TRUE)
+  
+  # Create interaction term (disposable_income * income_quintile)
+  interaction_term <- disposable_income * income_quintile
+  
+  return(data.frame(income_quintile = income_quintile, interaction_term = interaction_term))
+}
+load_and_prepare_data_with_interactions <- function() {
+  data_list <- load_and_prepare_data()
+ 
+  # Add interaction terms to the combined data
+  interaction_terms <- create_interaction_terms(data_list$combined_data[, "Disposable_Income"])
+ 
+  # Combine the interaction terms with the original data
+  combined_data_with_interactions <- cbind(data_list$combined_data, interaction_terms)
+  
+  return(list(vacancy = data_list$vacancy, combined_data = combined_data_with_interactions))
+}
+
+# Modify VECM analysis to include exogenous variables with interaction terms
+vecm_analysis_with_interactions <- function(data_list) {
+  # Retrieve the multivariate time series data with interaction terms
+  combined_data <- data_list$combined_data
+  
+  print(combined_data)
+  # Johansen cointegration test
+  johansen_test <- ca.jo(combined_data, type = "trace", K = 5, ecdet = "const") 
+  summary_test = summary(johansen_test)
+  print(summary_test)
+  test_stat <- summary_test@teststat
+  critical_values <- summary_test@cval
+  rank <- sum(test_stat > critical_values[, "1pct"])
+  print(rank)
+  
+  if (rank > 0) {
+    cat("\nCointegration detected. Proceeding with VECM.\n")
+    # Estimate the VECM model, including interaction term in exogenous variables
+    vecm_model <- VECM(combined_data, lag = 2, r = rank, exog = combined_data[, c("interaction_terms.income_quintile", "interaction_terms.interaction_term")], include = "const") 
+    summary(vecm_model)
+    return(vecm_model)
+  } else {
+    cat("\nNo cointegration detected. VECM is not appropriate.\n")
+    return(NULL)
+  }
+}
+
+
+
 # Execute the VAR analysis
 data_list <- tryCatch({
   load_and_prepare_data()
@@ -245,19 +294,54 @@ if (!is.null(data_list)) {
     print(svar_model)
   }
   
+  # tvar section:
+   d_data <- na.omit(diff(data_list$combined_data))
+  
+  # Extract threshold variable as numeric vector (must match rows of d_data)
+  th_var <- d_data[, "Disposable_Income"]
+  
+  # Sanity check
+  cat("Data rows:", nrow(d_data), "| Threshold vector length:", length(th_var), "\n")
+  
+  d_data_ts <- ts(d_data)
+
+  # Fit TVAR model
+  tvar_model <- TVAR(d_data_ts,
+                                   lag = 1,
+                                   nthresh = 1,
+                                   thVar = th_var,
+                                   model = "TAR",
+                                   commonInter = TRUE)
+
+  print(tvar_model)
+  plot(tvar_model)
+  
 }
 
-```
+data_list <- tryCatch({
+  load_and_prepare_data_with_interactions()
+}, error = function(e) {
+  cat("Error loading data:", e$message, "\n")
+  return(NULL)
+})
+
+# Perform the VECM analysis with interaction terms
+if (!is.null(data_list)) {
+  vecm_model <- vecm_analysis_with_interactions(data_list)
+  print(vecm_model)
+  
+}
+
 Summary Interpretation
 
-    All variables are I(1) and became stationary after differencing.
+All variables are I(1) and became stationary after differencing.
 
-    The VAR(1) model is stable and appropriately specified.
+The VAR(1) model is stable and appropriately specified.
 
-    Own lags (Vacancy.l1, Housing_Price.l1, Mortgage_Rate.l1) are significant for some variables, suggesting persistence.
+Own lags (Vacancy.l1, Housing_Price.l1, Mortgage_Rate.l1) are significant for some variables, suggesting persistence.
 
-    There is no Granger causality, but instantaneous causality exists, especially for housing prices and disposable income.
+There is no Granger causality, but instantaneous causality exists, especially for housing prices and disposable income.
 
-    Covariance and correlation matrices show modest linear relationships among residuals, but nothing too strong.
+Covariance and correlation matrices show modest linear relationships among residuals, but nothing too strong.
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+Note that the echo = FALSE parameter was added to the code chunk to prevent printing of the R code that generated the plot.
