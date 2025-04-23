@@ -329,7 +329,20 @@ data_list <- tryCatch({
 if (!is.null(data_list)) {
   vecm_model <- vecm_analysis_with_interactions(data_list)
   print(vecm_model)
-  
+  coeff_matrix <- coef(vecm_model)
+
+  # Convert to matrix and set row/column names if needed
+  coeff_df <- melt(coeff_matrix)
+  names(coeff_df) <- c("Equation", "Variable", "Coefficient")
+
+  # Plot heatmap
+  library(ggplot2)
+  ggplot(coeff_df, aes(x = Variable, y = Equation, fill = Coefficient)) +
+    geom_tile(color = "white") +
+    scale_fill_gradient2(low = "blue", high = "red", mid = "light yellow", midpoint = 0) +
+    labs(title = "VECM Coefficient Heatmap", x = "Variables", y = "Equations") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
 }
 
 Summary Interpretation
