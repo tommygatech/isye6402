@@ -16,7 +16,7 @@ This is an R Markdown document. Markdown is a simple formatting syntax for autho
 
 When you click the Knit button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
 
-{r pressure, echo=TRUE}
+{r pressure, echo=FALSE}
 # Load all required packages for VAR analysis
 library(zoo)
 library(lubridate)
@@ -111,7 +111,7 @@ vecm_analysis <- function(data_list) {
   # Johansen cointegration test
   johansen_test <- ca.jo(combined_data, type = "trace", K = 5, ecdet = "const") 
   summary_test=summary(johansen_test)
-  print(summary_test)
+  print(summary(summary_test))
   test_stat <- summary_test@teststat
   critical_values <- summary_test@cval
   rank <- sum(test_stat > critical_values[, "1pct"])
@@ -122,7 +122,7 @@ vecm_analysis <- function(data_list) {
     cat("\nCointegration detected. Proceeding with VECM.\n")
     # Estimate the VECM model
     vecm_model <- VECM(combined_data, lag = 2, r = rank, include = "const") 
-    summary(vecm_model)
+    print(summary(vecm_model))
     return(vecm_model)
   } else {
     cat("\nNo cointegration detected. VECM is not appropriate.\n")
@@ -206,11 +206,11 @@ vecm_analysis_with_interactions <- function(data_list) {
   # Retrieve the multivariate time series data with interaction terms
   combined_data <- data_list$combined_data
   
-  print(combined_data)
+  #print(combined_data)
   # Johansen cointegration test
   johansen_test <- ca.jo(combined_data, type = "trace", K = 5, ecdet = "const") 
   summary_test = summary(johansen_test)
-  print(summary_test)
+  print(summary(summary_test))
   test_stat <- summary_test@teststat
   critical_values <- summary_test@cval
   rank <- sum(test_stat > critical_values[, "1pct"])
@@ -220,14 +220,13 @@ vecm_analysis_with_interactions <- function(data_list) {
     cat("\nCointegration detected. Proceeding with VECM.\n")
     # Estimate the VECM model, including interaction term in exogenous variables
     vecm_model <- VECM(combined_data, lag = 2, r = rank, exog = combined_data[, c("interaction_terms.income_quintile", "interaction_terms.interaction_term")], include = "const") 
-    summary(vecm_model)
+    print(summary(vecm_model))
     return(vecm_model)
   } else {
     cat("\nNo cointegration detected. VECM is not appropriate.\n")
     return(NULL)
   }
 }
-
 
 
 # Execute the VAR analysis
@@ -242,7 +241,7 @@ if (!is.null(data_list)) {
   var_model <- var_analysis(data_list)
    # Perform VECM analysis
   vecm_model <- vecm_analysis(data_list)
-  print(vecm_model)
+  print(summary(vecm_model))
   
   # Only proceed with SVAR if VAR model was successfully created
   if (!is.null(var_model)) {
@@ -271,7 +270,7 @@ if (!is.null(data_list)) {
         if (is.null(svar_model)) {
           stop("svar_model is not fitted correctly.")
         }
-        summary(svar_model)
+        print(summary(svar_model))
 
 
         # Forecast Error Variance Decomposition
@@ -279,6 +278,7 @@ if (!is.null(data_list)) {
         if (is.null(svar_fevd)) {
           stop("svar_fevd is not fitted correctly.")
         }
+        print(summary(svar_fevd))
         par(mar = c(2, 2, 2, 1))
         plot(svar_fevd)
 
@@ -291,7 +291,7 @@ if (!is.null(data_list)) {
 
     # Execute SVAR analysis
     svar_model <- svar_analysis(var_model, data_list$combined_data)
-    print(svar_model)
+    print(summary(svar_model))
   }
   
   # tvar section:
@@ -313,7 +313,7 @@ if (!is.null(data_list)) {
                                    model = "TAR",
                                    commonInter = TRUE)
 
-  print(tvar_model)
+  print(summary(tvar_model))
   plot(tvar_model)
   
 }
@@ -328,21 +328,59 @@ data_list <- tryCatch({
 # Perform the VECM analysis with interaction terms
 if (!is.null(data_list)) {
   vecm_model <- vecm_analysis_with_interactions(data_list)
-  print(vecm_model)
+  print(summary(tvar_model))
   coeff_matrix <- coef(vecm_model)
 
   # Convert to matrix and set row/column names if needed
   coeff_df <- melt(coeff_matrix)
   names(coeff_df) <- c("Equation", "Variable", "Coefficient")
 
-  # Plot heatmap
-  library(ggplot2)
   ggplot(coeff_df, aes(x = Variable, y = Equation, fill = Coefficient)) +
     geom_tile(color = "white") +
     scale_fill_gradient2(low = "blue", high = "red", mid = "light yellow", midpoint = 0) +
     labs(title = "VECM Coefficient Heatmap", x = "Variables", y = "Equations") +
     theme_minimal() +
     theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  #--------------------------------------#
+    data_list$combined_data <- as.data.frame(data_list$combined_data)
+    #summary(data_list$combined_data)
+colnames(data_list$combined_data) <- c("Vacancy", "Housing_Price", "Mortgage_Rate", "Disposable_Income", "Income_Quintile", "Interaction_Term")
+    threshold_var <- data_list$combined_data$Income_Quintile 
+    th_var <- as.numeric(threshold_var)
+    
+    Y <- na.omit(data_list$combined_data[, c("Disposable_Income", "Vacancy", "Housing_Price", "Mortgage_Rate")])
+    Y <- ts(Y, start = c(1987, 1), frequency = 4)
+    Y_mat <- apply(as.matrix(Y), 2, as.numeric)  # Ensure it's numeric matrix
+    min_len <- min(nrow(Y_mat), length(th_var))
+    Y_mat <- Y_mat[1:min_len, ]
+    th_var <- th_var[1:min_len]
+    
+    # Fit TVAR
+    tvar_model <- TVAR(Y_mat,
+                       lag = 1,
+                       nthresh = 1,
+                       thVar = th_var,
+                       model = "TAR",
+                       commonInter = TRUE)
+    cat("Different regime dynamics and TVAR results")
+    # Summary and plot
+    print(summary(tvar_model))
+    plot(tvar_model)
+    
+    #VECM ECT
+    #str(residuals(vecm_model))
+    ect <- residuals(vecm_model)[, 1]
+    print(summary(ect))
+    hpi <- data_list$combined_data$Housing_Price
+    length(ect)
+    length(hpi)
+    hpi_trimmed <- hpi[1:length(ect)]
+    plot(hpi_trimmed, ect, 
+     xlab = "Housing Price Index (HPI)", 
+     ylab = "Error Correction Term (ECT) Residuals", 
+     main = "ECT Residuals vs Housing Price Index",
+     pch = 19, 
+     col = "blue")
 }
 
 Summary Interpretation
