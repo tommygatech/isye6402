@@ -1097,7 +1097,59 @@ Disposable_Income   0.9577 (0.0335) ***
 Vacancy 0.0560 (0.0334) .
 TVAR Regime Stats
 Threshold Variable  Threshold Value Regime 1 %  Regime 2 %
-Income Quintile Interaction Term    -0.0715 30.7%   69.3%</code></pre>
+Income Quintile Interaction Term    -0.0715 30.7%   69.3%
+
+----------------------------------
+VECM Model – Long-run Cointegration
+
+    Cointegrating vector coefficient for Disposable_Income: -0.4809
+    (Negative long-run effect—suggesting that higher disposable income is associated with lower vacancies, consistent with more homeownership/demand).
+
+    Interaction term (Disposable_Income × Income_Quintile): -0.3365
+    (Suggests that increases in income for lower quintiles have a stronger negative effect on vacancy, i.e., possibly boosting homeownership).
+VECM and TVAR model outputs, the results suggest some evidence that growth in the lowest 20% of incomes (proxied by the interaction term involving Disposable_Income and income_quintile) can contribute to changes in housing-related variables, but the relationship is modest and regime-dependent.
+
+TVAR Model – High-Income Regime (Top 20%)
+When in the high-income regime (upper quintile):
+
+    Disposable_Income → Vacancy (lagged):
+
+        Coefficient = -0.0594(0.0277) → Negative and significant
+
+        Interpretation: Higher income in the top 20% is associated with slightly lower vacancy, which could indicate increased demand or ownership — but the magnitude is much smaller than in the low-income regime.
+
+    Disposable_Income → Housing_Price:
+
+        Coefficient is larger and more significant than in the low-income regime.
+
+        Suggests that income growth at the top is more associated with price increases, not necessarily homeownership expansion.
+In the top 20% income group:
+
+    Income growth does reduce vacancy modestly, but the effect is weaker than in lower-income groups.
+
+    Growth in top incomes is more likely to drive up housing prices than directly expand homeownership — possibly due to:
+
+        Buying second homes/investment properties
+
+        Competing in already-saturated housing markets
+Income growth in the highest 20% does not drive homeownership as strongly as growth in the lowest 20%. Instead:
+
+    It raises housing prices more than it lowers vacancies.
+
+    Vacancy reduction is modest, implying limited new ownership by high earners.
+
+Income Growth Effects by Quintile (TVAR Model)
+Variable Affected   Q1: Lowest 20% Income Regime    Q5: Highest 20% Income Regime
+Vacancy Rate     Large decrease
+(-0.337) → Significant   Small decrease
+(-0.0594) → Weakly significant
+Housing Prices  Small or no effect  Moderate-to-large increase
+Significant
+Homeownership (implied) strong positive association via reduced vacancy  Weak or indirect impact
+Mostly through price dynamics
+Conclusion:Q1 (Low-income): Income growth likely enables first-time homeownership, reflected in sharp vacancy declines.
+
+Q5 (High-income): Income growth likely reflects market competition or investment purchases, driving up prices more than increasing ownership.</code></pre>
 <p>Note that the <code>echo = FALSE</code> parameter was added to the
 code chunk to prevent printing of the R code that generated the
 plot.</p>
