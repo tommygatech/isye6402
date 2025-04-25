@@ -1062,7 +1062,42 @@ Own lags (Vacancy.l1, Housing_Price.l1, Mortgage_Rate.l1) are significant for so
 
 There is no Granger causality, but instantaneous causality exists, especially for housing prices and disposable income.
 
-Covariance and correlation matrices show modest linear relationships among residuals, but nothing too strong.</code></pre>
+Covariance and correlation matrices show modest linear relationships among residuals, but nothing too strong.
+
+Quintiles:
+VECM Results – Focus on Disposable Income &amp; Income Quintile
+Cointegrating Vector
+Variable    Coefficient
+Vacancy 1
+Housing_Price   0.0348
+Mortgage_Rate   -0.4026
+Disposable_Income   -0.4809
+Income_Quintile -0.3365
+Interaction_Term    0.0051
+Error Correction Term (ECT)
+Equation    ECT Coefficient (Std. Error)
+Disposable_Income   0.0816 (0.0453) .
+Income_Quintile 0.1078 (0.0637) .
+Selected Lagged Effects
+Regressor (Lag -1, -2)  On Disposable_Income (Coef. ± SE)   On Income_Quintile (Coef. ± SE)
+Disposable_Income(-1)   -0.2303 (0.1675)    0.3997 (0.2352) .
+Disposable_Income(-2)   -0.1983 (0.1616)    0.1867 (0.2270)
+Income_Quintile(-1) -0.5756 (0.4688)    -0.0477 (0.6585)
+Income_Quintile(-2) -0.8498 (0.4648) .  -0.6213 (0.6529)
+Interaction_Term(-1)    0.0548 (0.0402) -0.0321 (0.0564)
+Interaction_Term(-2)    0.0754 (0.0396) .   0.0256 (0.0556)
+TVAR Model (by Income Quintile)
+Regime 1 (Low Income Quintile Regime)
+Equation    Disposable_Income(-1)
+Disposable_Income   0.6551 (0.1466) ***
+Vacancy 0.4108 (0.1460) **
+Regime 2 (High Income Quintile Regime)
+Equation    Disposable_Income(-1)
+Disposable_Income   0.9577 (0.0335) ***
+Vacancy 0.0560 (0.0334) .
+TVAR Regime Stats
+Threshold Variable  Threshold Value Regime 1 %  Regime 2 %
+Income Quintile Interaction Term    -0.0715 30.7%   69.3%</code></pre>
 <p>Note that the <code>echo = FALSE</code> parameter was added to the
 code chunk to prevent printing of the R code that generated the
 plot.</p>
