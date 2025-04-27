@@ -1,0 +1,715 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r}
+library(aod)
+library(bruceR)
+library(car)
+library(data.table)
+library(devtools)
+library(dplyr)
+library(dynlm)
+library(fGarch)
+library(forecast)
+library(ggplot2)
+library(ggfortify)
+library(ggpubr)
+library(greybox)
+library(lubridate)
+library(mFilter)
+library(mgcv)
+library(mlr)
+library(MuMIn)
+library(prophet)
+library(quantmod)
+library(reshape2)
+library(rugarch)
+library(tseries)
+library(TSA)
+library(TSstudio)
+library(tidyverse)
+library(urca)
+library(vars)
+library(xts)
+library(zoo)
+```
+
+
+```{r}
+income_df <- read.csv("Real Disposable Personal Income.csv")
+income <- ts(income_df$Personal.Income, start = c(1987, 1), frequency = 12) 
+income_q <- aggregate(income, nfrequency = 4)
+
+#plot linear trend
+time.pts = c(1:length(income_q))
+time.pts = c(time.pts - min(time.pts))/max(time.pts)
+x1 = time.pts
+linear = lm(income_q~x1)
+linear_ts = ts(fitted(linear),start=1987,frequency=4)
+plot(income_q, type = "l")
+lines(linear_ts, lwd=2, col="red")
+
+intercept <- coef(linear)[1]
+slope <- coef(linear)[2]
+
+cat("The intercept is ", intercept)
+cat("\nThe slope is ", slope)
+```
+```{r}
+#Calculate the Splie trend
+spl = gam(income_q~s(time.pts)) #Spline
+spl_ts = ts(fitted(spl),start=1987,frequency=4)
+
+ts.plot(income_q,ylab="Real Disposable Personal Income",main="Real Disposable Personal Income with Trend Estimations")
+lines(spl_ts,lwd=2,col="red")
+```
+```{r}
+ts.plot(income_q,lwd=1.5,ylab="Real Disposable Personal Income",main="Real Disposable Personal Income with Trend Estimations")
+lines(spl_ts,lwd=1.5,col="red")
+lines(linear_ts, lwd=1.5, col="blue")
+legend("topleft", legend=c("Dispsable Income","Linear Trend","Spline Trend"),lty = 1, col=c("black","blue","red"))
+```
+
+Now I will analyze pre pandemic data only.
+
+```{r}
+train_pre_pandemic <- ts(income_q[1:126], start = 1987, frequency = 4)
+test_pre_pandemic <- ts(income_q[127:132], start = c(2018,3), frequency = 4)
+```
+
+```{r}
+#Calculate the Splie trend
+time.pts2 = c(1:length(train_pre_pandemic))
+time.pts2 = c(time.pts2 - min(time.pts2))/max(time.pts2)
+x1 = time.pts2
+spl_pre_pandemic = gam(train_pre_pandemic~s(time.pts2)) #Spline
+spl_pre_pandemic_ts = ts(fitted(spl_pre_pandemic),start=1987,frequency=4)
+
+ts.plot(train_pre_pandemic,ylab="Real Disposable Personal Income",main="Real Disposable Personal Income with Trend Estimations")
+lines(spl_pre_pandemic_ts,lwd=2,col="red")
+```
+```{r}
+n <- length(train_pre_pandemic)
+time.pts2 <- (1:n - 1) / (n - 1)  
+future_time_pts <- (n + 1):(n + 6)
+future_time.pts2 <- (future_time_pts - 1) / (n - 1)
+
+newdata <- data.frame(time.pts2 = future_time.pts2)
+pred.spl <- predict(spl_pre_pandemic, newdata = newdata, se.fit = TRUE)
+
+fit.spl <- pred.spl$fit
+se.spl <- pred.spl$se.fit
+
+ubound = fit.spl+1.96*se.spl
+lbound = fit.spl-1.96*se.spl
+
+from.2016 <- ts(income_q[113:132], start = c(2015,1), frequency = 4)
+
+ymin = min(c(as.vector(from.2016),lbound))
+ymax = max(c(as.vector(from.2016),ubound))
+data.plot = from.2016
+names(data.plot)="Fore"
+plot(from.2016,type="l", ylim=c(ymin,ymax), xlab=" ", 
+ylab="Disposable Income")
+points(ts(fit.spl,start=c(2018,3),freq=4),lwd= 2, col="red")
+lines(ts(ubound,start=c(2018,3),freq=4),lty=3,lwd= 2, col="blue")
+lines(ts(lbound,start=c(2018,3),freq=4),lty=3,lwd= 2, col="blue")
+```
+
+
+```{r}
+# Calculate MAPE
+mape_spl <- mean(abs((test_pre_pandemic - fit.spl)/test_pre_pandemic))
+print(paste("MAPE of the Spline prediction is:", mape_spl))
+
+#calculate PM
+pm_spl <- round(sum((fit.spl - test_pre_pandemic) ^ 2)/sum((test_pre_pandemic - mean(test_pre_pandemic)) ^ 2),5)
+print(paste("PM of the Spline prediction is:", pm_spl))
+
+```
+
+Lets try ARIMA
+```{r}
+test_modelA <- function(p, d, q) {
+  result <- tryCatch({
+    mod <- suppressWarnings(arima(train_pre_pandemic, order = c(p, d, q), 
+                                  method = "ML", include.mean = TRUE))
+    current.aic <- AIC(mod)
+    current.bic <- BIC(mod)
+    df <- data.frame(p, d, q, current.aic, current.bic)
+    names(df) <- c("p", "d", "q", "AIC", "BIC")
+    return(df)
+  }, error = function(e) {
+    return(NULL)  
+  }, warning = function(w) {
+    return(NULL)  
+  })
+  return(result)
+}
+
+orders <- data.frame(p = numeric(0), d = numeric(0), q = numeric(0), 
+                     AIC = numeric(0), BIC = numeric(0))
+
+
+for (p in 0:8) {
+  for (d in 0:1) {
+    for (q in 0:8) {
+      res <- test_modelA(p, d, q)
+      if (!is.null(res)) {
+        orders <- rbind(orders, res)
+      }
+    }
+  }
+}
+
+# Order by BIC
+orders <- orders[order(orders$BIC), ]
+print(orders)
+```
+
+
+```{r}
+arima.pre.pandemic <- arima(train_pre_pandemic, order=c(2,1,1), method="ML", include.mean = TRUE)
+ts.plot(residuals(arima.pre.pandemic),ylab = "Residual Process")
+acf(residuals(arima.pre.pandemic),lag.max = 4*30)
+pacf(residuals(arima.pre.pandemic),lag.max = 4*30)
+acf(residuals(arima.pre.pandemic)^2,lag.max = 4*30)
+pacf(residuals(arima.pre.pandemic)^2,lag.max = 4*30)
+qqPlot(residuals(arima.pre.pandemic), ylab = "Residuals")
+Box.test(arima.pre.pandemic$resid, lag = (2 + 1 + 1 + 1), type = "Ljung-Box", fitdf = (2 + 1 + 1))
+```
+```{r}
+pred_arima<-predict(arima.pre.pandemic,n.ahead=6)
+
+ubound = pred_arima$pred+1.96*pred_arima$se
+lbound = pred_arima$pred-1.96*pred_arima$se
+
+
+ymin = min(c(as.vector(from.2016),lbound))
+ymax = max(c(as.vector(from.2016),ubound))
+data.plot = from.2016
+names(data.plot)="Fore"
+plot(from.2016,type="l", ylim=c(ymin,ymax), xlab=" ", 
+ylab="Disposable Income")
+points(ts(pred_arima$pred,start=c(2018,3),freq=4),lwd= 2, col="red")
+lines(ts(ubound,start=c(2018,3),freq=4),lty=3,lwd= 2, col="blue")
+lines(ts(lbound,start=c(2018,3),freq=4),lty=3,lwd= 2, col="blue")
+```
+```{r}
+# Calculate MAPE
+mape_arima <- mean(abs((test_pre_pandemic - pred_arima$pred)/test_pre_pandemic))
+print(paste("MAPE of the ARIMA prediction is:", mape_arima))
+
+#calculate PM
+pm_arima <- round(sum((pred_arima$pred - test_pre_pandemic) ^ 2)/sum((test_pre_pandemic - mean(test_pre_pandemic)) ^ 2),5)
+print(paste("PM of the ARIMA prediction is:", pm_arima))
+
+```
+
+Fit an ARIMA-GARCH
+```{r}
+#lets start testing a GARCH model with parameters 2 1 1
+test_modelAGG <- function(m,n){
+    spec = ugarchspec(variance.model=list(garchOrder=c(m,n)),
+                      mean.model=list(armaOrder=c(2,1),
+                                      include.mean=T),
+                      distribution.model="std")
+    fit = ugarchfit(spec, diff(train_pre_pandemic), solver = 'hybrid')
+    current.aic = infocriteria(fit)[1]
+    current.bic = infocriteria(fit)[2]
+    df = data.frame(m,n,current.aic,current.bic)
+    names(df) <- c("m","n","AIC","BIC")
+    #print(paste(m,n,current.bic,sep=" "))
+    return(df)
+}
+
+ordersAGG = data.frame(Inf,Inf,Inf,Inf)
+names(ordersAGG) <- c("m","n","AIC","BIC")
+
+for (m in 0:2){
+    for (n in 0:2){
+        possibleError <- tryCatch(
+            ordersAGG<-rbind(ordersAGG,test_modelAGG(m,n)),
+            error=function(e) e
+        )
+        if(inherits(possibleError, "error")) next
+    }
+}
+ordersAGG <- ordersAGG[order(-ordersAGG$BIC),]
+tail(ordersAGG)
+
+```
+
+```{r}
+spec.1 = ugarchspec(variance.model=list(garchOrder=c(0,1)),
+                 mean.model=list(armaOrder=c(2, 1),
+                 include.mean=T), distribution.model="std")
+
+```
+
+
+
+
+
+Now I will analyze post pandemic data only.
+```{r}
+train_post_pandemic <- ts(income_q[1:(length(income_q)-6)], start = 1987, frequency = 4)
+test_post_pandemic <- ts(income_q[(length(income_q)-5):length(income_q)], start = c(2022,4), frequency = 4)
+```
+
+```{r}
+#Calculate the Splie trend
+time.pts2 = c(1:length(train_post_pandemic))
+time.pts2 = c(time.pts2 - min(time.pts2))/max(time.pts2)
+x1 = time.pts2
+spl_post_pandemic = gam(train_post_pandemic~s(time.pts2)) #Spline
+spl_post_pandemic_ts = ts(fitted(spl_post_pandemic),start=1987,frequency=4)
+
+ts.plot(train_post_pandemic,ylab="Real Disposable Personal Income",main="Real Disposable Personal Income with Trend Estimations")
+lines(spl_post_pandemic_ts,lwd=2,col="red")
+```
+```{r}
+n <- length(train_post_pandemic)
+time.pts2 <- (1:n - 1) / (n - 1)  
+future_time_pts <- (n + 1):(n + 6)
+future_time.pts2 <- (future_time_pts - 1) / (n - 1)
+
+newdata <- data.frame(time.pts2 = future_time.pts2)
+pred.spl <- predict(spl_post_pandemic, newdata = newdata, se.fit = TRUE)
+
+fit.spl <- pred.spl$fit
+se.spl <- pred.spl$se.fit
+
+ubound = fit.spl+1.96*se.spl
+lbound = fit.spl-1.96*se.spl
+
+from.2016 <- ts(income_q[117:length(income_q)], start = c(2016,1), frequency = 4)
+
+ymin = min(c(as.vector(from.2016),lbound))
+ymax = max(c(as.vector(from.2016),ubound))
+data.plot = from.2016
+names(data.plot)="Fore"
+plot(from.2016,type="l", ylim=c(ymin,ymax), xlab=" ", 
+ylab="Disposable Income")
+points(ts(fit.spl, start = c(2022,4), frequency = 4),lwd= 2, col="red")
+lines(ts(ubound, start = c(2022,4), frequency = 4),lty=3,lwd= 2, col="blue")
+lines(ts(lbound, start = c(2022,4), frequency = 4),lty=3,lwd= 2, col="blue")
+```
+
+```{r}
+# Calculate MAPE
+mape_spl <- mean(abs((test_post_pandemic - fit.spl)/test_post_pandemic))
+print(paste("MAPE of the Spline prediction is:", mape_spl))
+
+#calculate PM
+pm_spl <- round(sum((fit.spl - test_post_pandemic) ^ 2)/sum((test_post_pandemic - mean(test_post_pandemic)) ^ 2),5)
+print(paste("PM of the Spline prediction is:", pm_spl))
+
+```
+Lets try ARIMA
+```{r}
+test_modelA <- function(p, d, q) {
+  result <- tryCatch({
+    mod <- suppressWarnings(arima(train_post_pandemic, order = c(p, d, q), 
+                                  method = "ML", include.mean = TRUE))
+    current.aic <- AIC(mod)
+    current.bic <- BIC(mod)
+    df <- data.frame(p, d, q, current.aic, current.bic)
+    names(df) <- c("p", "d", "q", "AIC", "BIC")
+    return(df)
+  }, error = function(e) {
+    return(NULL)  
+  }, warning = function(w) {
+    return(NULL)  
+  })
+  return(result)
+}
+
+orders <- data.frame(p = numeric(0), d = numeric(0), q = numeric(0), 
+                     AIC = numeric(0), BIC = numeric(0))
+
+
+for (p in 0:8) {
+  for (d in 0:1) {
+    for (q in 0:8) {
+      res <- test_modelA(p, d, q)
+      if (!is.null(res)) {
+        orders <- rbind(orders, res)
+      }
+    }
+  }
+}
+
+
+orders <- orders[order(orders$BIC), ]
+print(orders)
+```
+
+
+```{r}
+arima.post.pandemic <- arima(train_post_pandemic, order=c(0,1,4), method="ML", include.mean = TRUE)
+ts.plot(residuals(arima.post.pandemic),ylab = "Residual Process")
+acf(residuals(arima.post.pandemic),lag.max = 4*30)
+pacf(residuals(arima.post.pandemic),lag.max = 4*30)
+acf(residuals(arima.post.pandemic)^2,lag.max = 4*30)
+pacf(residuals(arima.post.pandemic)^2,lag.max = 4*30)
+qqPlot(residuals(arima.post.pandemic), ylab = "Residuals")
+Box.test(arima.post.pandemic$resid, lag = (0 + 1 + 4 + 1), type = "Ljung-Box", fitdf = (0 + 1 + 4))
+```
+```{r}
+pred_arima<-predict(arima.post.pandemic,n.ahead=6)
+
+ubound = pred_arima$pred+1.96*pred_arima$se
+lbound = pred_arima$pred-1.96*pred_arima$se
+
+
+ymin = min(c(as.vector(from.2016),lbound))
+ymax = max(c(as.vector(from.2016),ubound))
+data.plot = from.2016
+names(data.plot)="Fore"
+plot(from.2016,type="l", ylim=c(ymin,ymax), xlab=" ", 
+ylab="Disposable Income")
+points(ts(pred_arima$pred, start = c(2022,4), frequency = 4),lwd= 2, col="red")
+lines(ts(ubound, start = c(2022,4), frequency = 4),lty=3,lwd= 2, col="blue")
+lines(ts(lbound, start = c(2022,4), frequency = 4),lty=3,lwd= 2, col="blue")
+```
+```{r}
+# Calculate MAPE
+mape_arima <- mean(abs((test_post_pandemic - pred_arima$pred)/test_post_pandemic))
+print(paste("MAPE of the ARIMA prediction is:", mape_arima))
+
+#calculate PM
+pm_arima <- round(sum((pred_arima$pred - test_post_pandemic) ^ 2)/sum((test_post_pandemic - mean(test_post_pandemic)) ^ 2),5)
+print(paste("PM of the ARIMA prediction is:", pm_arima))
+
+```
+
+ARIMA-GARCH
+```{r}
+#lets start testing a GARCH model with parameters 0 1 4
+test_modelAGG <- function(m,n){
+    spec = ugarchspec(variance.model=list(garchOrder=c(m,n)),
+                      mean.model=list(armaOrder=c(0,4),
+                                      include.mean=T),
+                      distribution.model="std")
+    fit = ugarchfit(spec, diff(train_post_pandemic), solver = 'hybrid')
+    current.aic = infocriteria(fit)[1]
+    current.bic = infocriteria(fit)[2]
+    df = data.frame(m,n,current.aic,current.bic)
+    names(df) <- c("m","n","AIC","BIC")
+    #print(paste(m,n,current.bic,sep=" "))
+    return(df)
+}
+
+ordersAGG = data.frame(Inf,Inf,Inf,Inf)
+names(ordersAGG) <- c("m","n","AIC","BIC")
+
+for (m in 0:2){
+    for (n in 0:2){
+        possibleError <- tryCatch(
+            ordersAGG<-rbind(ordersAGG,test_modelAGG(m,n)),
+            error=function(e) e
+        )
+        if(inherits(possibleError, "error")) next
+    }
+}
+ordersAGG <- ordersAGG[order(-ordersAGG$BIC),]
+tail(ordersAGG)
+
+```
+
+```{r}
+
+# Initialize result storage
+bic_table <- data.frame(p = integer(), q = integer(), BIC = numeric(), stringsAsFactors = FALSE)
+
+final.bic.d1 <- Inf
+final.order.arma.d1 <- c(0, 0)
+
+for (p in 0:5) {
+  for (q in 0:5) {
+    spec <- ugarchspec(
+      variance.model = list(garchOrder = c(1, 0)),
+      mean.model = list(armaOrder = c(p, q), include.mean = TRUE),
+      distribution.model = "std"
+    )
+    
+    fit <- tryCatch({
+      ugarchfit(spec, diff(train_post_pandemic), solver = 'hybrid')
+    }, error = function(e) {
+      message(sprintf("Skipped ARMA(%d,%d): %s", p, q, e$message))
+      return(NULL)
+    })
+    
+    if (!is.null(fit)) {
+      current.bic <- infocriteria(fit)[2]
+      
+      # Add to table
+      bic_table <- rbind(bic_table, data.frame(p = p, q = q, BIC = current.bic))
+      
+      # Check for best model
+      if (current.bic < final.bic.d1) {
+        final.bic.d1 <- current.bic
+        final.order.arma.d1 <- c(p, q)
+      }
+    }
+  }
+}
+
+# Print final best order and the table
+print(final.order.arma.d1)
+print(bic_table)
+
+```
+```{r}
+#Refine the 0,1,1
+test_modelAGG <- function(m,n){
+    spec = ugarchspec(variance.model=list(garchOrder=c(m,n)),
+                      mean.model=list(armaOrder=c(0,1),
+                                      include.mean=T),
+                      distribution.model="std")
+    fit = ugarchfit(spec, diff(train_post_pandemic), solver = 'hybrid')
+    current.aic = infocriteria(fit)[1]
+    current.bic = infocriteria(fit)[2]
+    df = data.frame(m,n,current.aic,current.bic)
+    names(df) <- c("m","n","AIC","BIC")
+    #print(paste(m,n,current.bic,sep=" "))
+    return(df)
+}
+
+ordersAGG = data.frame(Inf,Inf,Inf,Inf)
+names(ordersAGG) <- c("m","n","AIC","BIC")
+
+for (m in 0:2){
+    for (n in 0:2){
+        possibleError <- tryCatch(
+            ordersAGG<-rbind(ordersAGG,test_modelAGG(m,n)),
+            error=function(e) e
+        )
+        if(inherits(possibleError, "error")) next
+    }
+}
+ordersAGG <- ordersAGG[order(-ordersAGG$BIC),]
+tail(ordersAGG)
+```
+
+
+Select the ARIMA-GARCH(0,1,1)(1,0)
+```{r}
+spec.1 = ugarchspec(variance.model=list(garchOrder=c(1,0)),
+                 mean.model=list(armaOrder=c(0, 1),
+                 include.mean=T), distribution.model="std")
+arima.garch.model = ugarchfit(spec.1, diff(train_post_pandemic), solver = 'hybrid')
+arima.garch.predict = ugarchforecast(arima.garch.model, n.ahead = 6)
+arima.garch.predict@forecast$seriesFor
+```
+
+
+
+```{r}
+spec.1 <- ugarchspec(
+  variance.model = list(garchOrder = c(1, 0)),
+  mean.model = list(armaOrder = c(0, 1), include.mean = TRUE), 
+  distribution.model = "std" 
+)
+
+
+n_forecast <- 6
+fore_series_daily <- numeric(0)
+fore_sigma_daily <- numeric(0)
+
+train_diff <- diff(train_post_pandemic)
+
+for (f in 1:n_forecast) {
+  
+
+  if (f == 1) {
+    data_diff <- train_diff
+  } else {
+    data_diff <- c(train_diff, diff(test_post_pandemic)[1:(f-1)])
+  }
+  
+
+  model_fit <- ugarchfit(spec = spec.1, data = data_diff, solver = "hybrid")
+  
+ 
+  model_forecast <- ugarchforecast(model_fit, n.ahead = 1)
+  
+
+  fore_series_daily <- c(fore_series_daily, model_forecast@forecast$seriesFor[1])
+  fore_sigma_daily <- c(fore_sigma_daily, model_forecast@forecast$sigmaFor[1])
+}
+
+reconstruct_forecast <- function(forecast_diff, last_obs) {
+  forecast_level <- numeric(length(forecast_diff))
+  forecast_level[1] <- last_obs + forecast_diff[1]
+  for (i in 2:length(forecast_diff)) {
+    forecast_level[i] <- forecast_level[i-1] + forecast_diff[i]
+  }
+  return(forecast_level)
+}
+
+#
+forecast_levels <- reconstruct_forecast(fore_series_daily, last(train_post_pandemic))
+
+
+upper_levels <- reconstruct_forecast(fore_series_daily + 1.96 * fore_sigma_daily, last(train_post_pandemic))
+lower_levels <- reconstruct_forecast(fore_series_daily - 1.96 * fore_sigma_daily, last(train_post_pandemic))
+
+
+ts_train <- ts(train_post_pandemic, frequency = 4) 
+ts_forecast <- ts(forecast_levels, start = c(2022, 4), frequency = 4)
+ts_upper <- ts(upper_levels, start = c(2022, 4), frequency = 4)
+ts_lower <- ts(lower_levels, start = c(2022, 4), frequency = 4)
+
+plot(from.2016, type = "l",
+     xlab = "", ylab = "Disposable Income", main = "Rolling ARIMA-GARCH Forecast")
+points(ts_forecast, col = "red", lwd = 2)
+lines(ts_upper, col = "blue", lty = 2)
+lines(ts_lower, col = "blue", lty = 2)
+
+```
+
+```{r}
+# Calculate MAPE
+mape_arima_grach <- mean(abs((test_post_pandemic - ts_forecast)/test_post_pandemic))
+print(paste("MAPE of the ARIMA-GARCH prediction is:", mape_arima_grach))
+
+#calculate PM
+pm_arima_garch <- round(sum((ts_forecast - test_post_pandemic) ^ 2)/sum((test_post_pandemic - mean(test_post_pandemic)) ^ 2),5)
+print(paste("PM of the ARIMA-GARCH prediction is:", pm_arima_garch))
+
+```
+Let's try Anupan's ARIMA-GARCH
+
+```{r}
+
+spec.1 = ugarchspec(variance.model=list(garchOrder=c(1,1)),
+                 mean.model=list(armaOrder=c(2, 1),
+                 include.mean=T), distribution.model="std")
+s2.arma.garch<-ugarchfit(spec.1,train_post_pandemic,solver='hybrid')
+
+nfore = 6
+fore_series_daily = NULL
+fore_sigma_daily = NULL
+
+for(f in 1: nfore)
+		{
+			#Fit models
+			data = train_post_pandemic
+			if(f>=2)
+			data = c(train_post_pandemic,test_post_pandemic[1:(f-1)])  
+			final.model.1 = ugarchfit(spec.1, data, solver = 'hybrid')    
+			#Forecast
+			fore = ugarchforecast(final.model.1, n.ahead=1)
+			fore_series_daily = c(fore_series_daily, fore@forecast$seriesFor)
+			fore_sigma_daily = c(fore_sigma_daily, fore@forecast$sigmaFor)
+		}
+fore_series_daily[is.nan(fore_series_daily)]=0
+
+
+ubound = fore_series_daily+1.96*fore_sigma_daily
+lbound = fore_series_daily-1.96*fore_sigma_daily
+
+
+ymin = min(c(as.vector(from.2016),lbound))
+ymax = max(c(as.vector(from.2016),ubound))
+data.plot = test_post_pandemic
+names(data.plot)="Fore"
+plot(from.2016,type="l", ylim=c(ymin,ymax), xlab=" ", 
+ylab="Return")
+points(ts(fore_series_daily, start = c(2022,4), frequency = 4),lwd= 2, col="red")
+lines(ts(ubound, start = c(2022,4), frequency = 4),lty=3,lwd= 2, col="blue")
+lines(ts(lbound, start = c(2022,4), frequency = 4),lty=3,lwd= 2, col="blue")
+```
+```{r}
+# Calculate MAPE
+mape_arima_grach.2 <- mean(abs((test_post_pandemic - fore_series_daily)/test_post_pandemic))
+print(paste("MAPE of the ARIMA-GARCH prediction is:", mape_arima_grach.2))
+
+#calculate PM
+pm_arima_garch.2 <- round(sum((fore_series_daily - test_post_pandemic) ^ 2)/sum((test_post_pandemic - mean(test_post_pandemic)) ^ 2),5)
+print(paste("PM of the ARIMA-GARCH prediction is:", pm_arima_garch.2))
+
+```
+
+
+Lets do the news impact curves vs TGARCH vs eGARCH.
+
+```{r}
+nic_garch <- newsimpact(s2.arma.garch)
+
+spec_tgarch <- ugarchspec(variance.model = list(model = "gjrGARCH", garchOrder = c(1,1)),
+                          mean.model = list(armaOrder = c(2,1), include.mean = TRUE),
+                          distribution.model = "std")
+
+spec_egarch <- ugarchspec(variance.model = list(model = "eGARCH", garchOrder = c(1,1)),
+                          mean.model = list(armaOrder = c(2,1), include.mean = TRUE),
+                          distribution.model = "std")
+
+final_model_tgarch <- ugarchfit(spec_tgarch, train_post_pandemic, solver = "hybrid")
+final_model_egarch <- ugarchfit(spec_egarch, train_post_pandemic, solver = "hybrid")
+
+nic_tgarch <- newsimpact(final_model_tgarch)
+nic_egarch <- newsimpact(final_model_egarch)
+par(mfrow = c(1, 3))
+plot(nic_garch$zx, nic_garch$zy, type = "l", col = "blue", lwd = 2,
+     xlab = "Shock", ylab = "Conditional Variance",
+     main = "Daily GARCH News Impact Curve")
+plot(nic_tgarch$zx, nic_tgarch$zy, type = "l", col = "blue", lwd = 2,
+     xlab = "Shock", ylab = "Conditional Variance",
+     main = "Daily News Impact Curve for TGARCH Model")
+plot(nic_egarch$zx, nic_egarch$zy, type = "l", col = "blue", lwd = 2,
+     xlab = "Shock", ylab = "Conditional Variance",
+     main = "Daily News Impact Curve for eGARCH Model")
+```
+
+Lets predict with eGARCH
+```{r}
+nfore = 6
+fore_series_daily = NULL
+fore_sigma_daily = NULL
+
+for(f in 1: nfore)
+		{
+			#Fit models
+			data = train_post_pandemic
+			if(f>=2)
+			data = c(train_post_pandemic,test_post_pandemic[1:(f-1)])  
+			final.model.1 = ugarchfit(spec_egarch, data, solver = 'hybrid')    
+			#Forecast
+			fore = ugarchforecast(final.model.1, n.ahead=1)
+			fore_series_daily = c(fore_series_daily, fore@forecast$seriesFor)
+			fore_sigma_daily = c(fore_sigma_daily, fore@forecast$sigmaFor)
+		}
+fore_series_daily[is.nan(fore_series_daily)]=0
+
+
+ubound = fore_series_daily+1.96*fore_sigma_daily
+lbound = fore_series_daily-1.96*fore_sigma_daily
+
+
+ymin = min(c(as.vector(from.2016),lbound))
+ymax = max(c(as.vector(from.2016),ubound))
+data.plot = test_post_pandemic
+names(data.plot)="Fore"
+plot(from.2016,type="l", ylim=c(ymin,ymax), xlab=" ", 
+ylab="Return")
+points(ts(fore_series_daily, start = c(2022,4), frequency = 4),lwd= 2, col="red")
+lines(ts(ubound, start = c(2022,4), frequency = 4),lty=3,lwd= 2, col="blue")
+lines(ts(lbound, start = c(2022,4), frequency = 4),lty=3,lwd= 2, col="blue")
+```
+```{r}
+# Calculate MAPE
+mape_arima_grach.2 <- mean(abs((test_post_pandemic - fore_series_daily)/test_post_pandemic))
+print(paste("MAPE of the ARIMA-GARCH prediction is:", mape_arima_grach.2))
+
+#calculate PM
+pm_arima_garch.2 <- round(sum((fore_series_daily - test_post_pandemic) ^ 2)/sum((test_post_pandemic - mean(test_post_pandemic)) ^ 2),5)
+print(paste("PM of the ARIMA-GARCH prediction is:", pm_arima_garch.2))
+
+```
